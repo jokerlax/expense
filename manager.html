@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Manager Portal - EXPENSE. ERP</title>
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="index.css">
+
+  <script>
+    // Security Page Guard
+    const session = sessionStorage.getItem("EXPENSE_SESSION");
+    if (!session) {
+      window.location.href = "index.html";
+    } else {
+      const user = JSON.parse(session);
+      if (user.role !== "Manager") {
+        window.location.href = "index.html";
+      }
+    }
+  </script>
+</head>
+
+<body>
+
+  <div class="app-container">
+
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        EXPENSE<span>.</span>
+      </div>
+
+      <nav class="sidebar-menu">
+        <div
+          style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 10px 16px 5px 16px; font-weight: 600;">
+          Team Portal</div>
+        <a class="menu-item active" data-view="team-dashboard" id="nav-team-dashboard">
+          <i class="fa-solid fa-chart-pie"></i> Team Dashboard
+        </a>
+        <a class="menu-item" data-view="approvals" id="nav-approvals">
+          <i class="fa-solid fa-clipboard-check"></i> Pending Approvals
+        </a>
+        <a class="menu-item" data-view="approval-history" id="nav-approval-history">
+          <i class="fa-solid fa-list-check"></i> Approval History
+        </a>
+
+        <div
+          style="font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); padding: 15px 16px 5px 16px; font-weight: 600;">
+          My Portal</div>
+        <a class="menu-item" data-view="my-dashboard" id="nav-my-dashboard">
+          <i class="fa-solid fa-chart-line"></i> My Dashboard
+        </a>
+        <a class="menu-item" data-view="add-expense" id="nav-add-expense">
+          <i class="fa-solid fa-plus-circle"></i> Add Expense
+        </a>
+        <a class="menu-item" data-view="expense-reports" id="nav-expense-reports">
+          <i class="fa-solid fa-file-invoice-dollar"></i> Expense Reports
+        </a>
+        <a class="menu-item" data-view="my-expenses" id="nav-my-expenses">
+          <i class="fa-solid fa-history"></i> Expense History
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a class="menu-item btn-logout" onclick="logout()">
+          <i class="fa-solid fa-right-from-bracket"></i> Logout
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+
+      <!-- Top Header Bar -->
+      <header class="header">
+        <div class="header-title-section">
+          <h1 id="page-title">Manager Approvals Desk</h1>
+          <p id="page-subtitle">Welcome back, Sarah</p>
+        </div>
+
+        <div class="header-actions">
+
+          <!-- User Profile Badge -->
+          <div class="user-profile">
+            <div class="user-profile-info">
+              <div class="user-profile-name" id="user-display-name">Sarah</div>
+              <div class="user-profile-role" id="user-display-role">Manager Role</div>
+            </div>
+            <div class="user-profile-avatar" id="user-display-avatar">S</div>
+          </div>
+
+        </div>
+      </header>
+
+      <!-- Panel View Area -->
+      <div class="view-container">
+
+        <!-- 0. TEAM DASHBOARD PANEL -->
+        <section class="panel-view" id="view-team-dashboard" style="display: block;">
+          <!-- Team KPIs -->
+          <div class="kpi-grid">
+            <div class="kpi-card pending">
+              <div class="kpi-label">Team Pending Approval</div>
+              <div class="kpi-value" id="mgr-kpi-pending">0 Claims</div>
+            </div>
+            <div class="kpi-card approved">
+              <div class="kpi-label">Team Approved</div>
+              <div class="kpi-value" id="mgr-kpi-approved">0 Claims</div>
+            </div>
+            <div class="kpi-card rejected">
+              <div class="kpi-label">Team Rejected</div>
+              <div class="kpi-value" id="mgr-kpi-rejected">0 Claims</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Total Outstanding</div>
+              <div class="kpi-value" id="mgr-kpi-total">Rp 0</div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <div class="dashboard-card">
+              <h3 class="card-title mb-4">Monthly Team Spend (<span id="team-chart-year-label">2026</span>)</h3>
+              <div style="position: relative; height: 320px;">
+                <canvas id="team-chart-monthly"></canvas>
+              </div>
+            </div>
+
+            <div class="dashboard-card">
+              <h3 class="card-title mb-4">Team Expense Categories</h3>
+              <div style="position: relative; height: 320px;">
+                <canvas id="team-chart-categories"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 1. PENDING APPROVALS PANEL -->
+        <section class="panel-view" id="view-approvals" style="display: none;">
+          <div class="d-flex justify-between align-center mb-4">
+            <h2 class="card-title">Pending Claims Queue</h2>
+            <div class="d-flex gap-2">
+              <select class="card-select" id="approval-filter-project" onchange="renderManagerApprovals()">
+                <option value="All">All Projects</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>Expense ID</th>
+                  <th>Employee</th>
+                  <th>Project</th>
+                  <th>Category</th>
+                  <th style="text-align: right;">Amount</th>
+                  <th>Date</th>
+                  <th style="text-align: center;">Policy Alerts</th>
+                  <th style="text-align: center;">Status</th>
+                  <th style="text-align: center;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="approvals-table-body">
+                <!-- Loaded dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 2. APPROVAL HISTORY PANEL -->
+        <section class="panel-view" id="view-approval-history" style="display: none;">
+          <div class="d-flex justify-between align-center mb-4">
+            <h2 class="card-title">Processed Decisions History</h2>
+            <div class="d-flex align-center">
+              <input type="text" class="form-control" id="mgr-history-search-input" placeholder="Search decisions..."
+                oninput="filterManagerHistoryTable(this.value)"
+                style="width: 220px; margin-right: 12px; height: 32px; padding: 4px 10px; font-size:12px;">
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>Expense ID</th>
+                  <th>Employee</th>
+                  <th>Project</th>
+                  <th>Category</th>
+                  <th style="text-align: right;">Amount</th>
+                  <th>Date</th>
+                  <th style="text-align: center;">Decision</th>
+                  <th>Custom Notes / Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="mgr-history-table-body">
+                <!-- Loaded dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 2.5 MY DASHBOARD PANEL -->
+        <section class="panel-view" id="view-my-dashboard" style="display: none;">
+          <!-- Employee KPIs -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-label">My Total Expenses</div>
+              <div class="kpi-value" id="db-kpi-total">Rp 0</div>
+            </div>
+            <div class="kpi-card approved">
+              <div class="kpi-label">Approved Claims</div>
+              <div class="kpi-value" id="db-kpi-approved">Rp 0</div>
+            </div>
+            <div class="kpi-card pending">
+              <div class="kpi-label">Pending Review</div>
+              <div class="kpi-value" id="db-kpi-pending">Rp 0</div>
+            </div>
+            <div class="kpi-card rejected">
+              <div class="kpi-label">Rejected Claims</div>
+              <div class="kpi-value" id="db-kpi-rejected">Rp 0</div>
+            </div>
+          </div>
+
+          <div class="dashboard-grid" style="display: grid; grid-template-columns: repeat(12, 1fr); gap: 20px;">
+            <!-- Left Chart - Monthly -->
+            <div class="dashboard-card" style="grid-column: span 8;">
+              <div class="card-header">
+                <h3 class="card-title">Monthly Expenses</h3>
+                <select class="card-select" id="dashboard-year-select" onchange="refreshDashboard()">
+                  <option>2026</option>
+                  <option>2025</option>
+                </select>
+              </div>
+              <div style="position: relative; height: 320px;">
+                <canvas id="chart-monthly"></canvas>
+              </div>
+            </div>
+
+            <!-- Right Card - Categories -->
+            <div class="dashboard-card" style="grid-column: span 4;">
+              <div class="card-header">
+                <h3 class="card-title">Expense Categories</h3>
+              </div>
+              <div class="category-progress-list" id="db-category-progress">
+                <!-- Loaded dynamically -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Recent Activity (Last 10 Days) & Create button -->
+          <div class="dashboard-card" style="margin-top: 20px;">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <h3 class="card-title">Recent Activity (Last 10 Days)</h3>
+              <button class="btn btn-primary btn-sm" onclick="navigateToTab('add-expense')">
+                <i class="fa-solid fa-plus"></i> Create Expense
+              </button>
+            </div>
+            <div class="table-container" style="margin-top: 12px;">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Expense ID</th>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Project</th>
+                    <th style="text-align: right;">Amount</th>
+                    <th style="text-align: center;">Status</th>
+                  </tr>
+                </thead>
+                <tbody id="db-recent-expenses-body">
+                  <!-- Loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. MY EXPENSES (HISTORY) PANEL -->
+        <section class="panel-view" id="view-my-expenses" style="display: none;">
+          <div class="d-flex justify-between align-center mb-4">
+            <h2 class="card-title">Transaction Ledger History</h2>
+            <div class="d-flex align-center">
+              <input type="text" class="form-control" id="history-search-input" placeholder="Search transactions..."
+                oninput="filterHistoryTable(this.value)"
+                style="width: 220px; margin-right: 12px; height: 32px; padding: 4px 10px; font-size:12px;">
+              <button class="btn btn-primary btn-sm" onclick="navigateToTab('add-expense')"><i
+                  class="fa-solid fa-circle-plus"></i> Submit New Expense</button>
+            </div>
+          </div>
+
+          <div class="table-container">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>Expense ID</th>
+                  <th>Date</th>
+                  <th>Project</th>
+                  <th>Category</th>
+                  <th style="text-align: right;">Amount</th>
+                  <th style="text-align: center;">Status</th>
+                  <th>Remarks</th>
+                  <th style="text-align: center;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="my-expenses-table-body">
+                <!-- Loaded dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 4. ADD EXPENSE PANEL -->
+        <section class="panel-view" id="view-add-expense" style="display: none;">
+          <div class="dashboard-card">
+            <div class="card-header">
+              <h3 class="card-title">Create Expense Claim</h3>
+              <button class="btn btn-secondary btn-sm" onclick="triggerMockOCR()"><i class="fa-solid fa-qrcode"></i>
+                Scan Receipt (OCR)</button>
+            </div>
+
+            <form id="expense-claim-form" onsubmit="handleExpenseSubmit(event)">
+              <div class="form-grid">
+                <!-- Date -->
+                <div class="form-group">
+                  <label class="form-label">Expense Date</label>
+                  <input type="date" class="form-control" id="form-exp-date" required>
+                </div>
+
+                <!-- Organization Fields -->
+                <div class="form-group">
+                  <label class="form-label">Country</label>
+                  <select class="form-control" id="form-exp-country" onchange="cascadeCountry()" required>
+                    <option value="">Select Country</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Project</label>
+                  <select class="form-control" id="form-exp-project" required>
+                    <option value="">Select Project</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Department</label>
+                  <select class="form-control" id="form-exp-department" required>
+                    <option value="">Select Department</option>
+                  </select>
+                </div>
+
+                <!-- Category and Type -->
+                <div class="form-group">
+                  <label class="form-label">Expense Category</label>
+                  <select class="form-control" id="form-exp-category" onchange="cascadeCategory()" required>
+                    <option value="">Select Category</option>
+                  </select>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Expense Type</label>
+                  <select class="form-control" id="form-exp-type" onchange="evaluatePolicyLimit()" required>
+                    <option value="">Select Type (Select Category first)</option>
+                  </select>
+                </div>
+
+                <!-- Currency and Amount -->
+                <div class="form-group">
+                  <label class="form-label">Amount</label>
+                  <input type="number" class="form-control" id="form-exp-amount" placeholder="Enter amount value"
+                    min="1" oninput="evaluatePolicyLimit()" required>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Currency</label>
+                  <select class="form-control" id="form-exp-currency" required>
+                    <option value="IDR">IDR (Rp)</option>
+                    <option value="INR">INR (₹)</option>
+                    <option value="USD">USD ($)</option>
+                    <option value="EUR">EUR (€)</option>
+                  </select>
+                </div>
+
+                <!-- Payment Method -->
+                <div class="form-group">
+                  <label class="form-label">Payment Method</label>
+                  <select class="form-control" id="form-exp-payment" required>
+                    <option value="Cash">Cash</option>
+                    <option value="Personal Credit Card">Personal Credit Card</option>
+                    <option value="Personal Debit Card">Personal Debit Card</option>
+                    <option value="Company Credit Card">Company Credit Card</option>
+                    <option value="Bank Transfer">Bank Transfer</option>
+                    <option value="Company Advance">Company Advance</option>
+                  </select>
+                </div>
+
+                <!-- Description -->
+                <div class="form-group">
+                  <label class="form-label">Description</label>
+                  <input type="text" class="form-control" id="form-exp-desc" placeholder="Purpose or context of expense"
+                    required>
+                </div>
+
+                <!-- Receipt Upload Box -->
+                <div class="form-group full-width">
+                  <label class="form-label">Receipt File Upload</label>
+                  <div class="receipt-upload-box" id="upload-box" onclick="triggerReceiptFileUpload()">
+                    <i class="fa-solid fa-cloud-arrow-up upload-icon"></i>
+                    <span class="upload-text" id="upload-status-text">Drag & drop receipt image or PDF here, or click to
+                      upload</span>
+                    <span class="upload-hint">Supported files: JPG, PNG, PDF (Max 5MB)</span>
+                  </div>
+                  <input type="file" id="form-exp-receipt-file" style="display: none;" accept="image/*,application/pdf"
+                    onchange="handleReceiptFileSelect(this)">
+                  <input type="hidden" id="form-exp-receipt-url" value="">
+                </div>
+
+                <!-- Remarks -->
+                <div class="form-group full-width">
+                  <label class="form-label">Remarks / Additional Notes</label>
+                  <textarea class="form-control" id="form-exp-remarks" rows="2"
+                    placeholder="Optional comments for managers"></textarea>
+                </div>
+              </div>
+
+              <!-- Action Bar -->
+              <div class="d-flex justify-between align-center border-top pt-4">
+                <div id="policy-verdict-indicator">
+                  <!-- Rendered dynamically -->
+                </div>
+                <div class="action-buttons">
+                  <button type="button" class="btn btn-secondary" onclick="saveExpenseDraft()">Save Draft</button>
+                  <button type="submit" class="btn btn-primary">Submit for Approval</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- 5. EXPENSE REPORTS PANEL -->
+        <section class="panel-view" id="view-expense-reports" style="display: none;">
+          <!-- Sub-navigation tabs -->
+          <div class="report-tabs"
+            style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid var(--border-color); padding-bottom: 10px;">
+            <button type="button" class="btn btn-primary" onclick="switchReportTab('create-report-subtab')"
+              id="tab-btn-create">Create Report</button>
+            <button type="button" class="btn btn-secondary" onclick="switchReportTab('history-report-subtab')"
+              id="tab-btn-history">Report History</button>
+          </div>
+
+          <!-- Create Report Subtab -->
+          <div id="create-report-subtab" class="report-tab-content" style="display: block;">
+            <div class="dashboard-card mb-4">
+              <h3 class="card-title mb-2">Create New Expense Report</h3>
+              <p style="color: var(--text-muted); font-size:12px; margin-bottom:16px;">
+                Fill in the report details and select the expenses you want to bundle into this report.
+              </p>
+
+              <form id="report-creation-form" onsubmit="handleReportSubmit(event)">
+                <div class="form-grid">
+                  <div class="form-group full-width">
+                    <label class="form-label">Report Title</label>
+                    <input type="text" class="form-control" id="report-title" placeholder="e.g., Q3 Business Travel"
+                      required>
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label">Start Date</label>
+                    <input type="date" class="form-control" id="report-start-date" required>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">End Date</label>
+                    <input type="date" class="form-control" id="report-end-date" required>
+                  </div>
+
+                  <div class="form-group">
+                    <label class="form-label">Select Approver</label>
+                    <select class="form-control" id="report-approver" required>
+                      <option value="">-- Select Approver --</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Select Verifier</label>
+                    <select class="form-control" id="report-verifier" required>
+                      <option value="">-- Select Verifier --</option>
+                    </select>
+                  </div>
+                </div>
+
+                <h3 class="card-title mt-4 mb-2">Select Unreported Expenses to Include</h3>
+                <div class="table-container mb-4">
+                  <table class="custom-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-expenses"
+                            onclick="toggleSelectAllExpenses(this)"></th>
+                        <th>Expense ID</th>
+                        <th>Date</th>
+                        <th>Category</th>
+                        <th>Description</th>
+                        <th style="text-align: right;">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody id="unreported-expenses-table-body">
+                      <!-- Dynamically populated with UNREPORTED expenses -->
+                    </tbody>
+                  </table>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Create & Submit Report</button>
+              </form>
+            </div>
+          </div>
+
+          <!-- Report History Subtab -->
+          <div id="history-report-subtab" class="report-tab-content" style="display: none;">
+            <div class="dashboard-card mb-4">
+              <h3 class="card-title mb-4">Submitted Expense Reports</h3>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Report ID</th>
+                      <th>Title</th>
+                      <th>Date Range</th>
+                      <th>Approver</th>
+                      <th>Verifier</th>
+                      <th style="text-align: right;">Total Amount</th>
+                      <th style="text-align: center;">Status</th>
+                      <th style="text-align: center;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reports-history-table-body">
+                    <!-- Dynamically populated reports -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Report Detail Modal/Section (visible when viewing details) -->
+            <div id="report-details-container" class="dashboard-card"
+              style="display: none; margin-top: 20px; border-top: 2px solid var(--primary);">
+              <div class="d-flex justify-between align-center mb-3">
+                <h3 class="card-title" id="det-report-title">Report Details</h3>
+                <button class="btn btn-secondary btn-sm" onclick="closeReportDetails()">Close</button>
+              </div>
+              <div class="report-meta-info"
+                style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; background: rgba(255, 255, 255, 0.05); padding: 16px; border-radius: 6px; font-size: 13px;">
+                <div><strong>Report ID:</strong> <span id="det-report-id">-</span></div>
+                <div><strong>Status:</strong> <span id="det-report-status">-</span></div>
+                <div><strong>Date Range:</strong> <span id="det-report-dates">-</span></div>
+                <div><strong>Created On:</strong> <span id="det-report-created">-</span></div>
+                <div><strong>Approver:</strong> <span id="det-report-approver">-</span></div>
+                <div><strong>Verifier:</strong> <span id="det-report-verifier">-</span></div>
+              </div>
+              <h4 class="card-title mb-2">Included Expenses</h4>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Expense ID</th>
+                      <th>Date</th>
+                      <th>Category</th>
+                      <th>Description</th>
+                      <th style="text-align: right;">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody id="report-expenses-details-body">
+                    <!-- Dynamically populated -->
+                  </tbody>
+                  <tfoot>
+                    <tr style="font-weight: bold; background: rgba(255, 255, 255, 0.05);">
+                      <td colspan="4" style="text-align: right;">Total Report Amount:</td>
+                      <td id="det-report-total" style="text-align: right;">Rp 0</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- ================= MODALS & OVERLAYS ================= -->
+
+  <!-- MANAGER REJECTION / CLARIFICATION REASON INPUT -->
+  <div class="modal-overlay" id="reason-modal-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title" id="reason-modal-title">Enter Action Details</h3>
+        <button class="modal-close" onclick="closeReasonModal()">&times;</button>
+      </div>
+      <div class="form-group mb-4">
+        <label class="form-label" id="reason-modal-label">Please state the reason</label>
+        <select class="form-control" id="reason-modal-dropdown">
+          <!-- Dynamic reasons loaded -->
+        </select>
+      </div>
+      <div class="form-group mb-4">
+        <label class="form-label">Reason Notes / Custom Remarks</label>
+        <textarea class="form-control" id="reason-modal-notes" rows="3"
+          placeholder="Provide details to help the employee understand..."></textarea>
+      </div>
+      <div class="d-flex justify-between">
+        <button class="btn btn-secondary" onclick="closeReasonModal()">Cancel</button>
+        <button class="btn btn-primary" id="reason-modal-submit-btn" onclick="submitManagerAction()">Submit</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- OCR MOCK SCANNING DIALOG -->
+  <div class="modal-overlay" id="ocr-scan-overlay">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title">Receipt OCR Scanner</h3>
+        <button class="modal-close" onclick="closeOcrScanner()">&times;</button>
+      </div>
+      <div class="ocr-scan-window">
+        <div class="ocr-scanner-visual"
+          style="position: relative; overflow: hidden; border-radius: 4px; background: #000; min-height: 240px; display: flex; align-items: center; justify-content: center;">
+          <video id="ocr-video" autoplay playsinline
+            style="width: 100%; max-height: 320px; object-fit: cover; border-radius: 4px; display: none;"></video>
+          <img src="" id="ocr-scan-img" alt="Receipt Preview"
+            style="width: 100%; max-height: 320px; object-fit: contain; border-radius: 4px;">
+          <div class="scan-laser-line" id="ocr-laser" style="display: none;"></div>
+          <canvas id="ocr-canvas" style="display: none;"></canvas>
+        </div>
+        <div class="scan-status-text" id="ocr-status-msg" style="margin-top: 10px; font-weight: 500;">Initializing
+          camera...</div>
+
+        <div class="ocr-actions" style="margin-top: 15px; display: flex; justify-content: center; gap: 10px;">
+          <button type="button" class="btn btn-primary" id="btn-ocr-capture" onclick="captureAndScanReceipt()"
+            style="display: none;">
+            <i class="fa-solid fa-camera"></i> Capture & Scan
+          </button>
+          <button type="button" class="btn btn-primary" id="btn-ocr-select-file" onclick="triggerOcrFileSelect()"
+            style="display: none;">
+            <i class="fa-solid fa-file-image"></i> Select Receipt File
+          </button>
+          <button type="button" class="btn btn-secondary" id="btn-ocr-retry" onclick="startOcrCamera()"
+            style="display: none;">
+            <i class="fa-solid fa-arrows-rotate"></i> Retry Camera
+          </button>
+        </div>
+        <input type="file" id="ocr-file-input" style="display: none;" accept="image/*"
+          onchange="handleOcrFileSelect(this)">
+      </div>
+    </div>
+  </div>
+
+  <!-- EXPENSE DETAILS MODAL -->
+  <div class="modal-overlay" id="expense-details-overlay">
+    <div class="modal-box" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3 class="modal-title">Transaction Details</h3>
+        <button class="modal-close" onclick="closeExpenseDetails()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 20px; overflow-y: auto; max-height: 450px;">
+        <div class="report-meta-info"
+          style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; font-size: 13px; margin-bottom: 20px; background: rgba(255, 255, 255, 0.05); padding: 16px; border-radius: 6px;">
+          <div><strong>Expense ID:</strong> <span id="det-exp-id">-</span></div>
+          <div><strong>Status:</strong> <span id="det-exp-status" class="status-badge"
+              style="display: inline-block;">-</span></div>
+          <div><strong>Date:</strong> <span id="det-exp-date">-</span></div>
+          <div><strong>Employee:</strong> <span id="det-exp-employee">-</span></div>
+          <div><strong>Project:</strong> <span id="det-exp-project">-</span></div>
+          <div><strong>Category:</strong> <span id="det-exp-category">-</span></div>
+          <div><strong>Type:</strong> <span id="det-exp-type">-</span></div>
+          <div><strong>Amount:</strong> <span id="det-exp-amount">-</span></div>
+          <div><strong>Payment Method:</strong> <span id="det-exp-payment">-</span></div>
+          <div><strong>Date Created:</strong> <span id="det-exp-created">-</span></div>
+        </div>
+
+        <div style="margin-bottom: 15px;">
+          <h4 style="margin-bottom: 6px; font-size: 13px; font-weight: 600;">Description:</h4>
+          <p id="det-exp-desc"
+            style="font-size: 12px; color: var(--text-muted); background: rgba(255, 255, 255, 0.02); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); margin: 0;">
+            -</p>
+        </div>
+
+        <div style="margin-bottom: 15px;">
+          <h4 style="margin-bottom: 6px; font-size: 13px; font-weight: 600;">Remarks / Logs:</h4>
+          <p id="det-exp-remarks"
+            style="font-size: 12px; color: var(--text-muted); background: rgba(255, 255, 255, 0.02); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color); margin: 0;">
+            -</p>
+        </div>
+
+        <div id="det-exp-receipt-preview-container" style="margin-top: 15px; display: none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <h4 style="margin: 0; font-size: 13px; font-weight: 600;">Attached Receipt:</h4>
+            <a id="det-exp-receipt-download" href="#" download="receipt_attachment.jpg" class="btn btn-secondary btn-sm"
+              style="padding: 2px 8px; font-size: 11px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;"><i
+                class="fa-solid fa-download"></i> Download</a>
+          </div>
+          <img src="" id="det-exp-receipt-img"
+            style="width: 100%; max-height: 200px; object-fit: contain; border-radius: 4px; border: 1px solid var(--border-color);"
+            alt="Receipt Preview">
+        </div>
+      </div>
+      <div class="modal-footer"
+        style="padding: 15px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
+        <button class="btn btn-secondary" onclick="closeExpenseDetails()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MONTH EXPENSES DETAIL MODAL -->
+  <div class="modal-overlay" id="month-expenses-overlay">
+    <div class="modal-box" style="width: 850px; max-width: 95%; padding: 20px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="month-expenses-title">Expenses for August 2026</h3>
+        <button class="modal-close" onclick="closeMonthExpenses()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 0; overflow-y: auto; max-height: 450px;">
+        <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 12px;">
+          <thead>
+            <tr
+              style="border-bottom: 2px solid var(--border-color); color: var(--text-muted); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px;">
+              <th style="padding: 10px 6px; font-weight: 600;">ID</th>
+              <th style="padding: 10px 6px; font-weight: 600;">Date</th>
+              <th style="padding: 10px 6px; font-weight: 600;">Project</th>
+              <th style="padding: 10px 6px; font-weight: 600;">Category</th>
+              <th style="padding: 10px 6px; font-weight: 600;">Type</th>
+              <th style="padding: 10px 6px; font-weight: 600; text-align: right;">Amount</th>
+              <th style="padding: 10px 6px; font-weight: 600; text-align: center;">Status</th>
+            </tr>
+          </thead>
+          <tbody id="month-expenses-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer"
+        style="padding: 15px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
+        <button class="btn btn-secondary" onclick="closeMonthExpenses()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION -->
+  <div class="alert-toast" id="system-toast">
+    <i class="fa-solid fa-circle-info" id="toast-icon"></i>
+    <span id="toast-message">Operation successful</span>
+  </div>
+
+  <!-- JS CONTROLLERS -->
+  <script src="database.js"></script>
+  <script src="manager.js"></script>
+</body>
+
+</html>

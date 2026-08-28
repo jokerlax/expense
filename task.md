@@ -1,0 +1,16 @@
+- `[x]` Update `employee.html` sidebar menu item
+- `[x]` Update `employee.html` main view panels: remove receipt wallet, add expense report sections (Create Report & Report History)
+- `[x]` Update `employee.js` tab navigation configurations
+- `[x]` Update `employee.js` individual expense creation logic to save as "UNREPORTED"
+- `[x]` Update `employee.js` `triggerMockOCR` simulation to directly autofill form
+- `[x]` Add report management javascript logic to `employee.js` (populating dropdowns, rendering unreported list, report submission, report history, report details)
+- `[x]` Verify employee portal functionality manually
+- `[x]` Update `manager.html` sidebar navigation links for Personal Portal
+- `[x]` Add Personal Portal view panels and modal overlays inside `manager.html`
+- `[x]` Integrate personal claim management controllers in `manager.js`
+- `[x]` Implement direct routing to Finance (`PENDING_FINANCE`) for Manager personal claims in `manager.js`
+- `[x]` Refactor manager team charts for multi-currency compatibility and click drill-downs
+- `[x]` Verify manager portal bracket syntax using `check_brackets.py`
+- `[x]` Implement personal My Dashboard sidebar option, panel views, and refresh controllers in Manager Portal
+- `[x]` Standardize column text alignments (right-align amount, center-align statuses/decisions/alerts/actions) in all tables across manager.html and manager.js
+- `[x]` Bind click event listeners to Expense IDs across all Manager Portal tables to pop up transaction detail tickets
