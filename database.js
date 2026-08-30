@@ -133,23 +133,9 @@ const DEFAULT_SEEDS = {
     { name: "Credit Card Statement", status: "Active" },
     { name: "Other", status: "Active" }
   ],
-  expenses: [
-    { id: "EXP001", date: "2026-08-18", employeeId: "EMP001", employeeName: "John", country: "ID", project: "PRJ-JAK", department: "IT", category: "Travel", type: "Flight", amount: 15000000, currency: "IDR", paymentMethod: "Company Credit Card", description: "Flight ticket for Jakarta Project Client onboarding", receiptUrl: "receipt_flight.jpg", status: "PAID", remarks: "Processed via payout schedule", dateCreated: "2026-08-10" },
-    { id: "EXP002", date: "2026-08-18", employeeId: "EMP002", employeeName: "David", country: "ID", project: "PRJ-JAK", department: "IT", category: "Hotel", type: "Hotel", amount: 8500000, currency: "IDR", paymentMethod: "Personal Credit Card", description: "Hotel accommodation for Jakarta site inspection (5 nights)", receiptUrl: "receipt_hotel.jpg", status: "FINANCE_APPROVED", remarks: "Awaiting disbursement processing", dateCreated: "2026-08-11" },
-    { id: "EXP003", date: "2026-08-19", employeeId: "EMP003", employeeName: "Sarah", country: "ID", project: "PRJ-JAK", department: "IT", category: "Food", type: "Client Meal", amount: 4300000, currency: "IDR", paymentMethod: "Cash", description: "Dinner with Client Stakeholders at Grand Hyatt", receiptUrl: "receipt_dinner.jpg", status: "APPROVED", remarks: "Approved by Nikita", dateCreated: "2026-08-12" },
-    { id: "EXP004", date: "2026-08-15", employeeId: "EMP002", employeeName: "David", country: "ID", project: "PRJ-JAK", department: "IT", category: "Office", type: "Stationery", amount: 5000000, currency: "IDR", paymentMethod: "Bank Transfer", description: "Bulk printer paper and toner cartridges for local site office", receiptUrl: "receipt_stationery.png", status: "PAID", remarks: "Payout completed", dateCreated: "2026-08-12" },
-    
-    { id: "EXP005", date: "2026-08-18", employeeId: "EMP001", employeeName: "John", country: "ID", project: "PRJ-JAK", department: "IT", category: "Travel", type: "Flight", amount: 6000000, currency: "IDR", paymentMethod: "Company Credit Card", description: "Urgent return trip to HQ", receiptUrl: "receipt_flight2.jpg", status: "PENDING_MANAGER", remarks: "", dateCreated: "2026-08-18" },
-    { id: "EXP006", date: "2026-08-18", employeeId: "EMP002", employeeName: "David", country: "ID", project: "PRJ-JAK", department: "IT", category: "Hotel", type: "Hotel", amount: 3000000, currency: "IDR", paymentMethod: "Personal Credit Card", description: "Additional nights due to flight delay", receiptUrl: "receipt_hotel2.jpg", status: "PENDING_FINANCE", remarks: "Approved by manager, awaiting finance check", dateCreated: "2026-08-18" },
-    { id: "EXP007", date: "2026-08-19", employeeId: "EMP003", employeeName: "Sarah", country: "ID", project: "PRJ-JAK", department: "IT", category: "Food", type: "Lunch", amount: 1200000, currency: "IDR", paymentMethod: "Personal Debit Card", description: "Team lunch after sprint completion", receiptUrl: "receipt_lunch.jpg", status: "PENDING_MANAGER", remarks: "", dateCreated: "2026-08-19" },
-    
-    { id: "EXP008", date: "2026-08-18", employeeId: "EMP001", employeeName: "John", country: "ID", project: "PRJ-JAK", department: "IT", category: "Travel", type: "Taxi", amount: 3500000, currency: "IDR", paymentMethod: "Cash", description: "VIP Airport limousine transfer", receiptUrl: "receipt_taxi.jpg", status: "MANAGER_REJECTED", remarks: "VIP transfer not permitted. Re-submit with standard taxi rate.", dateCreated: "2026-08-18" },
-    { id: "EXP009", date: "2026-08-19", employeeId: "EMP002", employeeName: "David", country: "ID", project: "PRJ-JAK", department: "IT", category: "Food", type: "Dinner", amount: 2000000, currency: "IDR", paymentMethod: "Cash", description: "Personal meal claimed under business expense", receiptUrl: "receipt_food.jpg", status: "FINANCE_REJECTED", remarks: "Unallowable expense. Clarification not accepted.", dateCreated: "2026-08-19" }
-  ],
-  reimbursements: [
-    { id: "REIM001", expenseId: "EXP001", employeeId: "EMP001", employeeName: "John", amount: 15000000, paymentMethod: "Bank Transfer", paymentDate: "2026-08-19", status: "PAID" },
-    { id: "REIM002", expenseId: "EXP004", employeeId: "EMP002", employeeName: "David", amount: 5000000, paymentMethod: "Bank Transfer", paymentDate: "2026-08-16", status: "PAID" }
-  ],
+  expenses: [],
+  reports: [],
+  reimbursements: [],
   reasons: [
     { code: "MREC", name: "Missing Receipt", type: "Clarification" },
     { code: "EXPO", name: "Amount Exceeds Policy", type: "Rejection" },
@@ -174,10 +160,7 @@ const DEFAULT_SEEDS = {
     { code: "CLARIFICATION_REQUIRED", label: "Clarification Required" },
     { code: "CANCELLED", label: "Cancelled" }
   ],
-  auditLogs: [
-    { id: "LOG001", timestamp: "2026-08-21T10:00:00Z", userId: "USR004", userName: "Nikita", action: "Database Initialize", details: "System setup initialized with default master databases." },
-    { id: "LOG002", timestamp: "2026-08-21T11:30:00Z", userId: "USR005", userName: "Finance User", action: "Process Reimbursement", details: "Processed EXP001 for John amounting to Rp 15,000,000." }
-  ]
+  auditLogs: []
 };
 
 class LocalDatabase {
@@ -187,20 +170,17 @@ class LocalDatabase {
   }
 
   init() {
+    const versionKey = "EXPENSE_ERP_V3_EMPTY_DATA";
+    if (!localStorage.getItem(versionKey)) {
+      localStorage.setItem(this.key, JSON.stringify(DEFAULT_SEEDS));
+      localStorage.setItem(versionKey, "true");
+      return;
+    }
+
     const cached = localStorage.getItem(this.key);
     if (!cached) {
       localStorage.setItem(this.key, JSON.stringify(DEFAULT_SEEDS));
       return;
-    }
-    
-    // Auto upgrade if cached localStorage does not contain password field (from previous run)
-    try {
-      const parsed = JSON.parse(cached);
-      if (parsed.users && parsed.users.length > 0 && !parsed.users[0].password) {
-        localStorage.setItem(this.key, JSON.stringify(DEFAULT_SEEDS));
-      }
-    } catch (e) {
-      localStorage.setItem(this.key, JSON.stringify(DEFAULT_SEEDS));
     }
   }
 
@@ -299,6 +279,40 @@ class LocalDatabase {
       details
     };
     this.addRecord("auditLogs", log);
+  }
+}
+
+// Global Date Range Sanitizer for Folders & Reports
+function sanitizeReportDateRange(startDateVal, endDateVal, folderExpenses = []) {
+  try {
+    if (Array.isArray(folderExpenses) && folderExpenses.length > 0) {
+      const validDates = folderExpenses.map(e => e ? e.date : null).filter(Boolean).sort();
+      if (validDates.length > 0) {
+        return {
+          startDate: validDates[0],
+          endDate: validDates[validDates.length - 1]
+        };
+      }
+    }
+    
+    if (startDateVal && endDateVal && startDateVal > endDateVal) {
+      return {
+        startDate: endDateVal,
+        endDate: startDateVal
+      };
+    }
+    
+    const today = new Date().toISOString().split("T")[0];
+    return {
+      startDate: startDateVal || today,
+      endDate: endDateVal || today
+    };
+  } catch (err) {
+    const today = new Date().toISOString().split("T")[0];
+    return {
+      startDate: startDateVal || today,
+      endDate: endDateVal || today
+    };
   }
 }
 

@@ -282,6 +282,14 @@
                   </select>
                 </div>
 
+                <!-- Folder / Report Attachment -->
+                <div class="form-group">
+                  <label class="form-label">Attach to Folder / Report (Optional)</label>
+                  <select class="form-control" id="form-exp-report-folder">
+                    <option value="">-- No Folder (Unassigned) --</option>
+                  </select>
+                </div>
+
                 <!-- Description -->
                 <div class="form-group">
                   <label class="form-label">Description</label>
@@ -396,8 +404,42 @@
                   </table>
                 </div>
 
-                <button type="submit" class="btn btn-primary">Create & Submit Report</button>
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-secondary" onclick="handleDraftFolderCreate()">
+                    <i class="fa-solid fa-folder-plus"></i> Create Draft Folder
+                  </button>
+                  <button type="submit" class="btn btn-primary">
+                    <i class="fa-solid fa-paper-plane"></i> Create &amp; Submit Report
+                  </button>
+                </div>
               </form>
+            </div>
+
+            <!-- Draft Folders List -->
+            <div class="dashboard-card mb-4">
+              <h3 class="card-title mb-2"><i class="fa-solid fa-folder-open"></i> My Draft Expense Folders</h3>
+              <p style="color: var(--text-muted); font-size:12px; margin-bottom:16px;">
+                Folders created for aggregating expenses. Click "View / Edit Folder" to manage attached expenses or submit for approval.
+              </p>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Folder ID</th>
+                      <th>Title</th>
+                      <th>Date Range</th>
+                      <th>Approver</th>
+                      <th>Items Attached</th>
+                      <th style="text-align: right;">Total Amount</th>
+                      <th style="text-align: center;">Status</th>
+                      <th style="text-align: center;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="draft-folders-table-body">
+                    <!-- Dynamically populated draft folders -->
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -425,47 +467,6 @@
                 </table>
               </div>
             </div>
-
-            <!-- Report Detail Modal/Section (visible when viewing details) -->
-            <div id="report-details-container" class="dashboard-card"
-              style="display: none; margin-top: 20px; border-top: 2px solid var(--primary);">
-              <div class="d-flex justify-between align-center mb-3">
-                <h3 class="card-title" id="det-report-title">Report Details</h3>
-                <button class="btn btn-secondary btn-sm" onclick="closeReportDetails()">Close</button>
-              </div>
-              <div class="report-meta-info"
-                style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; background: rgba(255, 255, 255, 0.05); padding: 16px; border-radius: 6px; font-size: 13px;">
-                <div><strong>Report ID:</strong> <span id="det-report-id">-</span></div>
-                <div><strong>Status:</strong> <span id="det-report-status">-</span></div>
-                <div><strong>Date Range:</strong> <span id="det-report-dates">-</span></div>
-                <div><strong>Created On:</strong> <span id="det-report-created">-</span></div>
-                <div><strong>Approver:</strong> <span id="det-report-approver">-</span></div>
-                <div><strong>Verifier:</strong> <span id="det-report-verifier">-</span></div>
-              </div>
-              <h4 class="card-title mb-2">Included Expenses</h4>
-              <div class="table-container">
-                <table class="custom-table">
-                  <thead>
-                    <tr>
-                      <th>Expense ID</th>
-                      <th>Date</th>
-                      <th>Category</th>
-                      <th>Description</th>
-                      <th>Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody id="report-expenses-details-body">
-                    <!-- Dynamically populated -->
-                  </tbody>
-                  <tfoot>
-                    <tr style="font-weight: bold; background: rgba(255, 255, 255, 0.05);">
-                      <td colspan="4" style="text-align: right;">Total Report Amount:</td>
-                      <td id="det-report-total">Rp 0</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </div>
           </div>
         </section>
 
@@ -474,6 +475,80 @@
   </div>
 
   <!-- ================= MODALS & OVERLAYS ================= -->
+
+  <!-- EMPLOYEE REPORT / FOLDER DETAILS MODAL OVERLAY -->
+  <div class="modal-overlay" id="report-details-overlay">
+    <div class="modal-box" style="width: 900px; max-width: 95%; padding: 20px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="det-report-title"><i class="fa-solid fa-folder-open"></i> Folder Details</h3>
+        <button class="modal-close" onclick="closeReportDetails()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 0; overflow-y: auto; max-height: 520px;">
+        <!-- Meta info grid -->
+        <div class="report-meta-info" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; background: rgba(255,255,255,0.05); padding: 14px 16px; border-radius: 6px; font-size: 12px;">
+          <div><strong>Folder ID:</strong> <span id="det-report-id">-</span></div>
+          <div><strong>Status:</strong> <span id="det-report-status" class="status-badge">-</span></div>
+          <div><strong>Date Range:</strong> <span id="det-report-dates">-</span></div>
+          <div><strong>Created On:</strong> <span id="det-report-created">-</span></div>
+          <div><strong>Approver:</strong> <span id="det-report-approver">-</span></div>
+          <div><strong>Verifier:</strong> <span id="det-report-verifier">-</span></div>
+          <div style="grid-column: span 2;"><strong>Total Amount:</strong> <span id="det-report-total" style="font-weight: 700; color: var(--primary); font-size: 14px;">-</span></div>
+        </div>
+
+        <!-- Included Expenses Section -->
+        <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px;"><i class="fa-solid fa-list-check"></i> Expenses Included in Folder</h4>
+        <div class="table-container mb-4">
+          <table class="custom-table" style="font-size: 12px;">
+            <thead>
+              <tr>
+                <th>Expense ID</th>
+                <th>Date</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th style="text-align: right;">Amount</th>
+                <th style="text-align: center;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="report-expenses-details-body">
+              <!-- Loaded dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Add Unassigned Expenses Section (Visible for Draft Folders) -->
+        <div id="folder-add-expenses-section" style="display: none; margin-top: 20px; border-top: 1px solid var(--border-color); pt-3;">
+          <h4 style="font-size: 13px; font-weight: 600; margin-bottom: 8px; padding-top: 12px;"><i class="fa-solid fa-plus-circle"></i> Attach Unassigned Expenses to this Folder</h4>
+          <div class="table-container mb-3">
+            <table class="custom-table" style="font-size: 12px;">
+              <thead>
+                <tr>
+                  <th style="width: 40px; text-align: center;"><input type="checkbox" id="select-all-folder-add" onclick="toggleSelectAllFolderAdd(this)"></th>
+                  <th>Expense ID</th>
+                  <th>Date</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th style="text-align: right;">Amount</th>
+                </tr>
+              </thead>
+              <tbody id="folder-unassigned-expenses-body">
+                <!-- Loaded dynamically -->
+              </tbody>
+            </table>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="attachSelectedToActiveFolder()">
+            <i class="fa-solid fa-paperclip"></i> Attach Selected Expenses to Folder
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="padding: 15px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+        <div id="folder-footer-actions">
+          <!-- Submit folder button if DRAFT -->
+        </div>
+        <button class="btn btn-secondary" onclick="closeReportDetails()">Close</button>
+      </div>
+    </div>
+  </div>
 
   <!-- OCR MOCK SCANNING DIALOG -->
   <div class="modal-overlay" id="ocr-scan-overlay">
@@ -606,8 +681,8 @@
   </div>
 
   <!-- JS CONTROLLERS -->
-  <script src="database.js"></script>
-  <script src="employee.js"></script>
+  <script src="database.js?v=14"></script>
+  <script src="employee.js?v=14"></script>
 </body>
 
 </html>

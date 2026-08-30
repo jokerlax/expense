@@ -143,34 +143,30 @@
 
         <!-- 1. PENDING APPROVALS PANEL -->
         <section class="panel-view" id="view-approvals" style="display: none;">
-          <div class="d-flex justify-between align-center mb-4">
-            <h2 class="card-title">Pending Claims Queue</h2>
-            <div class="d-flex gap-2">
-              <select class="card-select" id="approval-filter-project" onchange="renderManagerApprovals()">
-                <option value="All">All Projects</option>
-              </select>
+          <!-- Section 1A: Pending Reports / Folders -->
+          <div class="dashboard-card mb-4">
+            <div class="d-flex justify-between align-center mb-3">
+              <h2 class="card-title"><i class="fa-solid fa-folder-tree"></i> Pending Expense Folders &amp; Reports</h2>
             </div>
-          </div>
-
-          <div class="table-container">
-            <table class="custom-table">
-              <thead>
-                <tr>
-                  <th>Expense ID</th>
-                  <th>Employee</th>
-                  <th>Project</th>
-                  <th>Category</th>
-                  <th style="text-align: right;">Amount</th>
-                  <th>Date</th>
-                  <th style="text-align: center;">Policy Alerts</th>
-                  <th style="text-align: center;">Status</th>
-                  <th style="text-align: center;">Action</th>
-                </tr>
-              </thead>
-              <tbody id="approvals-table-body">
-                <!-- Loaded dynamically -->
-              </tbody>
-            </table>
+            <div class="table-container">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Report / Folder ID</th>
+                    <th>Title</th>
+                    <th>Employee</th>
+                    <th>Date Range</th>
+                    <th style="text-align: center;">Items Attached</th>
+                    <th style="text-align: right;">Total Amount</th>
+                    <th style="text-align: center;">Status</th>
+                    <th style="text-align: center;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="mgr-pending-reports-table-body">
+                  <!-- Loaded dynamically -->
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
 
@@ -397,6 +393,14 @@
                     <option value="Company Credit Card">Company Credit Card</option>
                     <option value="Bank Transfer">Bank Transfer</option>
                     <option value="Company Advance">Company Advance</option>
+                  </select>
+                </div>
+
+                <!-- Folder / Report Attachment -->
+                <div class="form-group">
+                  <label class="form-label">Attach to Folder / Report (Optional)</label>
+                  <select class="form-control" id="form-exp-report-folder">
+                    <option value="">-- No Folder (Unassigned) --</option>
                   </select>
                 </div>
 
@@ -746,6 +750,55 @@
     </div>
   </div>
 
+  <!-- MANAGER REPORT / FOLDER REVIEW MODAL -->
+  <div class="modal-overlay" id="report-approval-overlay">
+    <div class="modal-box" style="width: 920px; max-width: 95%; padding: 20px;">
+      <div class="modal-header">
+        <h3 class="modal-title" id="mgr-report-title"><i class="fa-solid fa-folder-open"></i> Review Expense Report / Folder</h3>
+        <button class="modal-close" onclick="closeReportApprovalModal()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px 0; overflow-y: auto; max-height: 500px;">
+        <!-- Meta info bar -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; background: rgba(255,255,255,0.05); padding: 12px 16px; border-radius: 6px; font-size: 12px;">
+          <div><strong>Report ID:</strong> <span id="mgr-report-id">-</span></div>
+          <div><strong>Employee:</strong> <span id="mgr-report-employee">-</span></div>
+          <div><strong>Date Range:</strong> <span id="mgr-report-dates">-</span></div>
+          <div><strong>Total Amount:</strong> <span id="mgr-report-total" style="font-weight: 700; color: var(--primary);">-</span></div>
+        </div>
+
+        <!-- Batch Action Bar -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; background: rgba(79,70,229,0.08); padding: 10px 14px; border-radius: 6px;">
+          <span style="font-size: 13px; font-weight: 600;"><i class="fa-solid fa-layer-group"></i> Items inside Folder (Review individually or batch approve/reject below):</span>
+          <div class="d-flex gap-2">
+            <button class="btn btn-success btn-sm" id="btn-approve-all-folder" onclick="approveAllFolderExpenses()"><i class="fa-solid fa-check-double"></i> Approve All Items</button>
+            <button class="btn btn-danger btn-sm" id="btn-reject-all-folder" onclick="rejectAllFolderExpenses()"><i class="fa-solid fa-ban"></i> Reject All Items</button>
+          </div>
+        </div>
+
+        <table class="custom-table" style="width: 100%; font-size: 12px;">
+          <thead>
+            <tr>
+              <th>Expense ID</th>
+              <th>Category</th>
+              <th>Type</th>
+              <th>Description</th>
+              <th style="text-align: right;">Amount</th>
+              <th style="text-align: center;">Policy Alerts</th>
+              <th style="text-align: center;">Status</th>
+              <th style="text-align: center;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="mgr-report-expenses-table-body">
+            <!-- Dynamically populated -->
+          </tbody>
+        </table>
+      </div>
+      <div class="modal-footer" style="padding: 15px 20px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
+        <button class="btn btn-secondary" onclick="closeReportApprovalModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATION -->
   <div class="alert-toast" id="system-toast">
     <i class="fa-solid fa-circle-info" id="toast-icon"></i>
@@ -753,8 +806,8 @@
   </div>
 
   <!-- JS CONTROLLERS -->
-  <script src="database.js"></script>
-  <script src="manager.js"></script>
+  <script src="database.js?v=14"></script>
+  <script src="manager.js?v=14"></script>
 </body>
 
 </html>

@@ -61,6 +61,7 @@ function navigateToTab(tabName) {
     initTeamDashboard();
   } else if (tabName === "finance-verify") {
     renderFinanceKPIs();
+    renderFinPendingReports();
     renderVerificationTable();
   } else if (tabName === "payment-processing") {
     renderPaymentProcessingTable();
@@ -240,7 +241,199 @@ function renderFinanceCharts() {
   });
 }
 
-// ================= FINANCE VERIFICATION TABLE =================
+// ================= FINANCE VERIFICATION & FOLDER APPROVALS =================
+
+let activeFinReportId = null;
+
+function renderFinPendingReports() {
+  const container = document.getElementById("fin-pending-reports-table-body");
+  if (!container) return;
+
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const expenses = expenseDb.getTable("expenses");
+  const userCurrency = getUserCurrency();
+
+  const pendingReports = reports.filter(r => r.status === "PENDING_FINANCE");
+
+  container.innerHTML = "";
+  if (pendingReports.length === 0) {
+    container.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No pending expense folders awaiting finance verification.</td></tr>`;
+    return;
+  }
+
+  const sorted = [...pendingReports].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
+
+  sorted.forEach(r => {
+    const folderExpenses = expenses.filter(e => e.reportId === r.id);
+    const cleanRange = sanitizeReportDateRange(r.startDate, r.endDate, folderExpenses);
+    let currentTotal = 0;
+    folderExpenses.forEach(e => {
+      currentTotal += convertCurrency(e.amount, e.currency || "IDR", userCurrency);
+    });
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="openFinReportApprovalModal('${r.id}')"><i class="fa-solid fa-folder"></i> ${r.id}</td>
+      <td style="font-weight: 600; cursor: pointer;" onclick="openFinReportApprovalModal('${r.id}')">${r.title}</td>
+      <td><strong>${r.employeeName}</strong></td>
+      <td>${formatDate(cleanRange.startDate)} - ${formatDate(cleanRange.endDate)}</td>
+      <td style="text-align: center;"><span class="badge" style="background: rgba(79,70,229,0.1); color: var(--primary); padding: 2px 8px; border-radius: 12px; font-weight: 700;">${folderExpenses.length} items</span></td>
+      <td style="font-weight: 600; text-align: right;">${formatAmount(currentTotal, userCurrency)}</td>
+      <td style="text-align: center;"><span class="status-badge pending_finance">PENDING FINANCE</span></td>
+      <td style="text-align: center;">
+        <button class="btn btn-primary btn-sm" onclick="openFinReportApprovalModal('${r.id}')"><i class="fa-solid fa-folder-open"></i> Review &amp; Verify Folder</button>
+      </td>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function openFinReportApprovalModal(reportId) {
+  activeFinReportId = reportId;
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const report = reports.find(r => r.id === reportId);
+  if (!report) return;
+
+  const userCurrency = getUserCurrency();
+  const expenses = expenseDb.getTable("expenses");
+  const folderExpenses = expenses.filter(e => e.reportId === reportId);
+  const cleanRange = sanitizeReportDateRange(report.startDate, report.endDate, folderExpenses);
+
+  document.getElementById("fin-report-id").innerText = report.id;
+  document.getElementById("fin-report-title").innerHTML = `<i class="fa-solid fa-folder-open"></i> Finance Folder Verification: ${report.title} (${report.id})`;
+  document.getElementById("fin-report-employee").innerText = report.employeeName;
+  document.getElementById("fin-report-dates").innerText = `${formatDate(cleanRange.startDate)} to ${formatDate(cleanRange.endDate)}`;
+
+  let totalSum = 0;
+  folderExpenses.forEach(e => {
+    totalSum += convertCurrency(e.amount, e.currency || "IDR", userCurrency);
+  });
+  document.getElementById("fin-report-total").innerText = formatAmount(totalSum, userCurrency);
+
+  const container = document.getElementById("fin-report-expenses-table-body");
+  container.innerHTML = "";
+
+  if (folderExpenses.length === 0) {
+    container.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No expenses inside this folder.</td></tr>`;
+  } else {
+    const sorted = [...folderExpenses].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
+
+    sorted.forEach(e => {
+      const row = document.createElement("tr");
+      const policies = expenseDb.getTable("expensePolicies");
+      const matchedPolicy = policies.find(p => p.type.toLowerCase() === e.type.toLowerCase());
+      let policyAlert = `<span style="color: var(--approved-color);"><i class="fa-solid fa-circle-check"></i> Clean</span>`;
+      if (matchedPolicy && e.amount > matchedPolicy.limit) {
+        policyAlert = `<span style="color: var(--pending-color); font-weight:700;"><i class="fa-solid fa-triangle-exclamation"></i> Over budget</span>`;
+      }
+
+      const actionButtons = (e.status === "PENDING_FINANCE" || e.status === "APPROVED") ? `
+        <div class="action-buttons" style="justify-content: center;">
+          <button class="btn btn-secondary btn-sm" onclick="viewExpenseDetails('${e.id}')"><i class="fa-solid fa-receipt"></i> View</button>
+          <button class="btn btn-primary btn-sm" onclick="verifyFolderExpenseItem('${e.id}')">Verify</button>
+          <button class="btn btn-danger btn-sm" onclick="financeRejectDirect('${e.id}')">Reject</button>
+        </div>
+      ` : `<div class="action-buttons" style="justify-content: center;">
+            <button class="btn btn-secondary btn-sm" onclick="viewExpenseDetails('${e.id}')"><i class="fa-solid fa-receipt"></i> View</button>
+            <span style="color: var(--text-muted); font-style: italic; align-self: center;">${e.status.replace(/_/g, " ")}</span>
+           </div>`;
+
+      row.innerHTML = `
+        <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewExpenseDetails('${e.id}')">${e.id}</td>
+        <td>${e.category}</td>
+        <td>${e.type}</td>
+        <td>${e.description}</td>
+        <td style="font-weight: 600; text-align: right;">${formatAmount(e.amount, e.currency)}</td>
+        <td style="text-align: center;">${policyAlert}</td>
+        <td style="text-align: center;"><span class="status-badge ${e.status.toLowerCase()}">${e.status.replace(/_/g, " ")}</span></td>
+        <td style="text-align: center;">${actionButtons}</td>
+      `;
+      container.appendChild(row);
+    });
+  }
+
+  document.getElementById("fin-report-approval-overlay").classList.add("active");
+}
+
+function closeFinReportApprovalModal() {
+  document.getElementById("fin-report-approval-overlay").classList.remove("active");
+  activeFinReportId = null;
+  refreshUI();
+}
+
+function verifyFolderExpenseItem(expId) {
+  expenseDb.updateRecord("expenses", "id", expId, {
+    status: "FINANCE_APPROVED",
+    remarks: `Verified by Finance ${currentUser.name}`
+  });
+  expenseDb.addLog(currentUser.employeeId, currentUser.name, "Finance Verify Folder Item", `Finance verified item ${expId} in folder ${activeFinReportId}.`);
+  showToast(`Item ${expId} verified for payment settlement!`, "success");
+  
+  if (activeFinReportId) {
+    updateReportOverallStatus(activeFinReportId);
+    openFinReportApprovalModal(activeFinReportId);
+  }
+}
+
+function verifyAllFolderExpenses() {
+  if (!activeFinReportId) return;
+  const expenses = expenseDb.getTable("expenses");
+  const folderExpenses = expenses.filter(e => e.reportId === activeFinReportId && (e.status === "PENDING_FINANCE" || e.status === "APPROVED"));
+  
+  if (folderExpenses.length === 0) {
+    showToast("All items in this folder have already been verified.", "info");
+    return;
+  }
+
+  folderExpenses.forEach(e => {
+    expenseDb.updateRecord("expenses", "id", e.id, {
+      status: "FINANCE_APPROVED",
+      remarks: `Batch verified by Finance ${currentUser.name}`
+    });
+  });
+
+  updateReportOverallStatus(activeFinReportId);
+  expenseDb.addLog(currentUser.employeeId, currentUser.name, "Finance Verify Folder All", `Batch verified all items in folder ${activeFinReportId}.`);
+  showToast(`All items in folder ${activeFinReportId} verified & sent to Payment Settlement queue!`, "success");
+  openFinReportApprovalModal(activeFinReportId);
+}
+
+function updateReportOverallStatus(reportId) {
+  if (!reportId) return;
+  const reports = expenseDb.getTable("reports");
+  const report = reports.find(r => r.id === reportId);
+  if (!report) return;
+
+  const expenses = expenseDb.getTable("expenses");
+  const folderExpenses = expenses.filter(e => e.reportId === reportId);
+  if (folderExpenses.length === 0) return;
+
+  const statuses = folderExpenses.map(e => e.status);
+  const hasPendingManager = statuses.some(s => s === "PENDING_MANAGER");
+  const hasPendingFinance = statuses.some(s => s === "PENDING_FINANCE" || s === "APPROVED");
+  const allPaid = statuses.every(s => s === "PAID");
+  const allFinanceApproved = statuses.every(s => s === "FINANCE_APPROVED" || s === "PAID");
+  const allRejected = statuses.every(s => s === "MANAGER_REJECTED" || s === "FINANCE_REJECTED");
+
+  let newReportStatus = report.status;
+  if (allPaid) {
+    newReportStatus = "PAID";
+  } else if (allFinanceApproved) {
+    newReportStatus = "FINANCE_APPROVED";
+  } else if (hasPendingFinance) {
+    newReportStatus = "PENDING_FINANCE";
+  } else if (hasPendingManager) {
+    newReportStatus = "PENDING_MANAGER";
+  } else if (allRejected) {
+    newReportStatus = "MANAGER_REJECTED";
+  } else {
+    newReportStatus = "PARTIALLY_APPROVED";
+  }
+
+  expenseDb.updateRecord("reports", "id", reportId, { status: newReportStatus });
+}
 
 function renderVerificationTable() {
   const expenses = expenseDb.getTable("expenses");
@@ -255,7 +448,11 @@ function renderVerificationTable() {
     return;
   }
 
-  [...pendingVerify].sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(e => {
+  [...pendingVerify].sort((a, b) => {
+    const dDiff = new Date(b.date) - new Date(a.date);
+    if (dDiff !== 0) return dDiff;
+    return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
+  }).forEach(e => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewExpenseDetails('${e.id}')">${e.id}</td>
@@ -291,7 +488,11 @@ function renderPaymentProcessingTable() {
     return;
   }
 
-  [...verifiedList].sort((a, b) => new Date(b.date) - new Date(a.date)).forEach(e => {
+  [...verifiedList].sort((a, b) => {
+    const dDiff = new Date(b.date) - new Date(a.date);
+    if (dDiff !== 0) return dDiff;
+    return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
+  }).forEach(e => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewExpenseDetails('${e.id}')">${e.id}</td>
@@ -352,7 +553,11 @@ function filterReimbursementsTable(query) {
 // ================= FINANCE ACTIONS =================
 
 function financeVerifyDirect(expId) {
+  const expense = expenseDb.getTable("expenses").find(e => e.id === expId);
   expenseDb.updateRecord("expenses", "id", expId, { status: "FINANCE_APPROVED" });
+  if (expense && expense.reportId) {
+    updateReportOverallStatus(expense.reportId);
+  }
   expenseDb.addLog(currentUser.employeeId, currentUser.name, "Verify Expense", `Finance verified claim ${expId}.`);
   showToast(`Expense ${expId} verified for payout.`, "success");
   refreshUI();
@@ -360,7 +565,11 @@ function financeVerifyDirect(expId) {
 
 function financeRejectDirect(expId) {
   if (confirm(`Reject expense claim ${expId} from settlement queue?`)) {
+    const expense = expenseDb.getTable("expenses").find(e => e.id === expId);
     expenseDb.updateRecord("expenses", "id", expId, { status: "FINANCE_REJECTED", remarks: "Finance Verification Failed." });
+    if (expense && expense.reportId) {
+      updateReportOverallStatus(expense.reportId);
+    }
     expenseDb.addLog(currentUser.employeeId, currentUser.name, "Finance Reject", `Finance rejected claim ${expId}.`);
     showToast(`Claim ${expId} rejected.`, "error");
     refreshUI();
@@ -372,6 +581,9 @@ function financeProcessPayout(expId) {
   if (!expense) return;
 
   expenseDb.updateRecord("expenses", "id", expId, { status: "PAID", remarks: "Settled via ERP bank clearance." });
+  if (expense.reportId) {
+    updateReportOverallStatus(expense.reportId);
+  }
 
   const newReim = {
     id: "REIM" + (expenseDb.getTable("reimbursements").length + 1),
@@ -587,7 +799,20 @@ function setupAddExpenseForm() {
   const today = new Date().toISOString().split("T")[0];
   if (!editingDraftId) document.getElementById("form-exp-date").value = today;
 
+  populateFormFolderDropdown();
   cascadeCountry();
+}
+
+function populateFormFolderDropdown() {
+  const folderSelect = document.getElementById("form-exp-report-folder");
+  if (!folderSelect) return;
+  folderSelect.innerHTML = `<option value="">-- No Folder (Unassigned) --</option>`;
+  
+  let reports = expenseDb.getTable("reports") || [];
+  const userDraftFolders = reports.filter(r => r.employeeId === currentUser.employeeId && r.status === "DRAFT");
+  userDraftFolders.forEach(f => {
+    folderSelect.innerHTML += `<option value="${f.id}">📁 ${f.title} (${f.id})</option>`;
+  });
 }
 
 function cascadeCountry() {
@@ -658,6 +883,7 @@ function handleExpenseSubmit(event) {
   const description = document.getElementById("form-exp-desc").value.trim();
   const remarks = document.getElementById("form-exp-remarks").value.trim();
   const receiptUrl = document.getElementById("form-exp-receipt-url").value;
+  const selectedFolderId = document.getElementById("form-exp-report-folder")?.value || null;
 
   const policies = expenseDb.getTable("policies");
   const matched = policies.find(p => p.type === type && p.status === "Active");
@@ -669,7 +895,7 @@ function handleExpenseSubmit(event) {
     expenseDb.updateRecord("expenses", "id", editingDraftId, {
       date, country, project, department, category, type,
       amount, currency, paymentMethod, description, remarks,
-      receiptUrl, status: "PENDING_FINANCE",
+      receiptUrl, status: "PENDING_FINANCE", reportId: selectedFolderId,
       policyFlag: isOverBudget ? "Over budget" : "Clean"
     });
     expenseDb.addLog(currentUser.employeeId, currentUser.name, "Submit Draft", `Finance user submitted draft ${editingDraftId}.`);
@@ -684,6 +910,7 @@ function handleExpenseSubmit(event) {
       receiptUrl, employeeId: currentUser.employeeId,
       employeeName: currentUser.name,
       status: "PENDING_FINANCE",
+      reportId: selectedFolderId,
       policyFlag: isOverBudget ? "Over budget" : "Clean",
       dateCreated: new Date().toISOString().split("T")[0]
     };

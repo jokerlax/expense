@@ -72,6 +72,7 @@ function navigateToTab(tabName) {
   if (tabName === "team-dashboard") {
     initManagerDashboard();
   } else if (tabName === "approvals") {
+    renderManagerPendingReports();
     renderManagerApprovals();
   } else if (tabName === "approval-history") {
     renderManagerHistory();
@@ -87,6 +88,7 @@ function navigateToTab(tabName) {
 }
 
 function refreshUI() {
+  renderManagerPendingReports();
   renderManagerApprovals();
 }
 
@@ -134,22 +136,23 @@ function formatDate(dateStr) {
 function renderManagerApprovals() {
   const expenses = expenseDb.getTable("expenses");
   
-  // Managers review team expenses (exclude own claims and drafts)
-  const teamExpenses = expenses.filter(e => e.status !== "DRAFT" && e.employeeId !== currentUser.employeeId);
+  // Pending individual team expenses for manager approval (exclude items already inside a folder)
+  const teamExpenses = expenses.filter(e => e.status === "PENDING_MANAGER" && !e.reportId);
   
   // Set up project dropdown filtering
   const filterProj = document.getElementById("approval-filter-project");
-  const currentVal = filterProj.value || "All";
+  const currentVal = filterProj ? (filterProj.value || "All") : "All";
   const activeProjects = [...new Set(teamExpenses.map(t => t.project))];
   
-  filterProj.innerHTML = `<option value="All">All Projects</option>`;
-  activeProjects.forEach(p => {
-    filterProj.innerHTML += `<option value="${p}">${p}</option>`;
-  });
-  filterProj.value = currentVal;
+  if (filterProj) {
+    filterProj.innerHTML = `<option value="All">All Projects</option>`;
+    activeProjects.forEach(p => {
+      filterProj.innerHTML += `<option value="${p}">${p}</option>`;
+    });
+    filterProj.value = currentVal;
+  }
 
   const filtered = currentVal === "All" ? teamExpenses : teamExpenses.filter(t => t.project === currentVal);
-
   const userCurrency = getUserCurrency();
 
   // Recalculate KPIs
@@ -170,24 +173,32 @@ function renderManagerApprovals() {
     }
   });
 
-  document.getElementById("mgr-kpi-pending").innerText = `${pendingCount} Claim${pendingCount !== 1 ? 's' : ''}`;
-  document.getElementById("mgr-kpi-approved").innerText = `${approvedCount} Claim${approvedCount !== 1 ? 's' : ''}`;
-  document.getElementById("mgr-kpi-rejected").innerText = `${rejectedCount} Claim${rejectedCount !== 1 ? 's' : ''}`;
-  document.getElementById("mgr-kpi-total").innerText = formatAmount(totalOutstanding, userCurrency);
+  const pEl = document.getElementById("mgr-kpi-pending");
+  const aEl = document.getElementById("mgr-kpi-approved");
+  const rEl = document.getElementById("mgr-kpi-rejected");
+  const tEl = document.getElementById("mgr-kpi-total");
+
+  if (pEl) pEl.innerText = `${pendingCount} Claim${pendingCount !== 1 ? 's' : ''}`;
+  if (aEl) aEl.innerText = `${approvedCount} Claim${approvedCount !== 1 ? 's' : ''}`;
+  if (rEl) rEl.innerText = `${rejectedCount} Claim${rejectedCount !== 1 ? 's' : ''}`;
+  if (tEl) tEl.innerText = formatAmount(totalOutstanding, userCurrency);
 
   const container = document.getElementById("approvals-table-body");
+  if (!container) return;
   container.innerHTML = "";
 
   if (filtered.length === 0) {
-    container.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No team claims in approval queue.</td></tr>`;
+    container.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No standalone team claims in approval queue.</td></tr>`;
     return;
   }
 
-  // Sort: Pending approvals on top, then by date desc
+  // Sort: Pending approvals on top, then by date desc and ID desc
   const sorted = [...filtered].sort((a, b) => {
     if (a.status === "PENDING_MANAGER" && b.status !== "PENDING_MANAGER") return -1;
     if (a.status !== "PENDING_MANAGER" && b.status === "PENDING_MANAGER") return 1;
-    return new Date(b.date) - new Date(a.date);
+    const dateDiff = new Date(b.date) - new Date(a.date);
+    if (dateDiff !== 0) return dateDiff;
+    return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
   });
 
   sorted.forEach(e => {
@@ -271,6 +282,215 @@ function closeReasonModal() {
   document.getElementById("reason-modal-overlay").classList.remove("active");
 }
 
+let activeReviewReportId = null;
+
+function renderManagerPendingReports() {
+  const container = document.getElementById("mgr-pending-reports-table-body");
+  if (!container) return;
+  
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const expenses = expenseDb.getTable("expenses");
+  const userCurrency = getUserCurrency();
+  
+  // Pending reports for manager approval
+  const pendingReports = reports.filter(r => r.status === "PENDING_MANAGER");
+  
+  container.innerHTML = "";
+  
+  if (pendingReports.length === 0) {
+    container.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No pending expense folders awaiting manager approval.</td></tr>`;
+    return;
+  }
+  
+  // Sort descending by ID
+  const sortedReports = [...pendingReports].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
+  
+  sortedReports.forEach(r => {
+    const folderExpenses = expenses.filter(e => e.reportId === r.id);
+    const cleanRange = sanitizeReportDateRange(r.startDate, r.endDate, folderExpenses);
+    let currentTotal = 0;
+    folderExpenses.forEach(e => {
+      currentTotal += convertCurrency(e.amount, e.currency || "IDR", userCurrency);
+    });
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="openReportApprovalModal('${r.id}')"><i class="fa-solid fa-folder"></i> ${r.id}</td>
+      <td style="font-weight: 600; cursor: pointer;" onclick="openReportApprovalModal('${r.id}')">${r.title}</td>
+      <td><strong>${r.employeeName}</strong></td>
+      <td>${formatDate(cleanRange.startDate)} - ${formatDate(cleanRange.endDate)}</td>
+      <td style="text-align: center;"><span class="badge" style="background: rgba(79,70,229,0.1); color: var(--primary); padding: 2px 8px; border-radius: 12px; font-weight: 700;">${folderExpenses.length} items</span></td>
+      <td style="font-weight: 600; text-align: right;">${formatAmount(currentTotal, userCurrency)}</td>
+      <td style="text-align: center;"><span class="status-badge pending_manager">PENDING MANAGER</span></td>
+      <td style="text-align: center;">
+        <button class="btn btn-primary btn-sm" onclick="openReportApprovalModal('${r.id}')"><i class="fa-solid fa-folder-open"></i> Review Folder</button>
+      </td>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function openReportApprovalModal(reportId) {
+  activeReviewReportId = reportId;
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const report = reports.find(r => r.id === reportId);
+  if (!report) return;
+
+  const userCurrency = getUserCurrency();
+  const expenses = expenseDb.getTable("expenses");
+  const folderExpenses = expenses.filter(e => e.reportId === reportId);
+  const cleanRange = sanitizeReportDateRange(report.startDate, report.endDate, folderExpenses);
+
+  document.getElementById("mgr-report-id").innerText = report.id;
+  document.getElementById("mgr-report-title").innerHTML = `<i class="fa-solid fa-folder-open"></i> Review Folder: ${report.title} (${report.id})`;
+  document.getElementById("mgr-report-employee").innerText = report.employeeName;
+  document.getElementById("mgr-report-dates").innerText = `${formatDate(cleanRange.startDate)} to ${formatDate(cleanRange.endDate)}`;
+
+  let totalSum = 0;
+  folderExpenses.forEach(e => {
+    totalSum += convertCurrency(e.amount, e.currency || "IDR", userCurrency);
+  });
+  document.getElementById("mgr-report-total").innerText = formatAmount(totalSum, userCurrency);
+
+  const container = document.getElementById("mgr-report-expenses-table-body");
+  container.innerHTML = "";
+
+  if (folderExpenses.length === 0) {
+    container.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No expenses inside this folder.</td></tr>`;
+  } else {
+    // Sort folder expenses descending by ID
+    const sortedExpenses = [...folderExpenses].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
+
+    sortedExpenses.forEach(e => {
+      const row = document.createElement("tr");
+      
+      const policies = expenseDb.getTable("expensePolicies");
+      const matchedPolicy = policies.find(p => p.type.toLowerCase() === e.type.toLowerCase());
+      let policyAlert = `<span style="color: var(--approved-color);"><i class="fa-solid fa-circle-check"></i> Clean</span>`;
+      if (matchedPolicy && e.amount > matchedPolicy.limit) {
+        policyAlert = `<span style="color: var(--pending-color); font-weight:700;"><i class="fa-solid fa-triangle-exclamation"></i> Over budget</span>`;
+      }
+
+      const actionButtons = e.status === "PENDING_MANAGER" ? `
+        <div class="action-buttons" style="justify-content: center;">
+          <button class="btn btn-secondary btn-sm" onclick="viewExpenseDetails('${e.id}')"><i class="fa-solid fa-receipt"></i> View</button>
+          <button class="btn btn-success btn-sm" onclick="approveFolderExpenseItem('${e.id}')">Approve</button>
+          <button class="btn btn-danger btn-sm" onclick="openReasonModal('${e.id}', 'reject')">Reject</button>
+          <button class="btn btn-warning btn-sm" onclick="openReasonModal('${e.id}', 'clarification')">Clarify</button>
+        </div>
+      ` : `<div class="action-buttons" style="justify-content: center;">
+            <button class="btn btn-secondary btn-sm" onclick="viewExpenseDetails('${e.id}')"><i class="fa-solid fa-receipt"></i> View</button>
+            <span style="color: var(--text-muted); font-style: italic; align-self: center;">${e.status.replace(/_/g, " ")}</span>
+           </div>`;
+
+      row.innerHTML = `
+        <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewExpenseDetails('${e.id}')">${e.id}</td>
+        <td>${e.category}</td>
+        <td>${e.type}</td>
+        <td>${e.description}</td>
+        <td style="font-weight: 600; text-align: right;">${formatAmount(e.amount, e.currency)}</td>
+        <td style="text-align: center;">${policyAlert}</td>
+        <td style="text-align: center;"><span class="status-badge ${e.status.toLowerCase()}">${e.status.replace("_", " ")}</span></td>
+        <td style="text-align: center;">${actionButtons}</td>
+      `;
+      container.appendChild(row);
+    });
+  }
+
+  document.getElementById("report-approval-overlay").classList.add("active");
+}
+
+function closeReportApprovalModal() {
+  document.getElementById("report-approval-overlay").classList.remove("active");
+  activeReviewReportId = null;
+  refreshUI();
+}
+
+function approveFolderExpenseItem(expId) {
+  expenseDb.updateRecord("expenses", "id", expId, {
+    status: "PENDING_FINANCE",
+    remarks: `Approved by manager ${currentUser.name}`
+  });
+  expenseDb.addLog(currentUser.employeeId, currentUser.name, "Approve Folder Item", `Approved item ${expId} in folder ${activeReviewReportId}.`);
+  showToast(`Item ${expId} approved and sent to Finance queue!`, "success");
+  
+  if (activeReviewReportId) {
+    updateReportOverallStatus(activeReviewReportId);
+    openReportApprovalModal(activeReviewReportId);
+  }
+}
+
+function approveAllFolderExpenses() {
+  if (!activeReviewReportId) return;
+  const expenses = expenseDb.getTable("expenses");
+  const folderExpenses = expenses.filter(e => e.reportId === activeReviewReportId && e.status === "PENDING_MANAGER");
+  
+  if (folderExpenses.length === 0) {
+    showToast("All items in this folder have already been processed.", "info");
+    return;
+  }
+
+  folderExpenses.forEach(e => {
+    expenseDb.updateRecord("expenses", "id", e.id, {
+      status: "PENDING_FINANCE",
+      remarks: `Batch approved by manager ${currentUser.name}`
+    });
+  });
+
+  updateReportOverallStatus(activeReviewReportId);
+  expenseDb.addLog(currentUser.employeeId, currentUser.name, "Approve Folder All", `Batch approved all items in folder ${activeReviewReportId}.`);
+  showToast(`All items in folder ${activeReviewReportId} approved & sent to Finance queue!`, "success");
+  openReportApprovalModal(activeReviewReportId);
+}
+
+function rejectAllFolderExpenses() {
+  if (!activeReviewReportId) return;
+  const expenses = expenseDb.getTable("expenses");
+  const folderExpenses = expenses.filter(e => e.reportId === activeReviewReportId && e.status === "PENDING_MANAGER");
+  
+  if (folderExpenses.length === 0) {
+    showToast("All items in this folder have already been processed.", "info");
+    return;
+  }
+
+  if (confirm(`Reject all remaining pending items in folder ${activeReviewReportId}?`)) {
+    folderExpenses.forEach(e => {
+      expenseDb.updateRecord("expenses", "id", e.id, {
+        status: "MANAGER_REJECTED",
+        remarks: `Batch rejected by manager ${currentUser.name}`
+      });
+    });
+
+    updateReportOverallStatus(activeReviewReportId);
+    expenseDb.addLog(currentUser.employeeId, currentUser.name, "Reject Folder All", `Batch rejected all items in folder ${activeReviewReportId}.`);
+    showToast(`All items in folder ${activeReviewReportId} rejected!`, "error");
+    openReportApprovalModal(activeReviewReportId);
+  }
+}
+
+function updateReportOverallStatus(reportId) {
+  const expenses = expenseDb.getTable("expenses");
+  const folderExpenses = expenses.filter(e => e.reportId === reportId);
+  
+  if (folderExpenses.length === 0) return;
+  
+  const statuses = folderExpenses.map(e => e.status);
+  const allApproved = statuses.every(s => s === "PENDING_FINANCE" || s === "FINANCE_APPROVED" || s === "PAID");
+  const allRejected = statuses.every(s => s === "MANAGER_REJECTED" || s === "FINANCE_REJECTED");
+  const hasPending = statuses.some(s => s === "PENDING_MANAGER");
+
+  let newReportStatus = "PENDING_MANAGER";
+  if (!hasPending) {
+    if (allApproved) newReportStatus = "APPROVED";
+    else if (allRejected) newReportStatus = "MANAGER_REJECTED";
+    else newReportStatus = "PARTIALLY_APPROVED";
+  }
+
+  expenseDb.updateRecord("reports", "id", reportId, { status: newReportStatus });
+}
+
 function submitManagerAction() {
   const selectVal = document.getElementById("reason-modal-dropdown").value;
   const notesVal = document.getElementById("reason-modal-notes").value;
@@ -293,7 +513,13 @@ function submitManagerAction() {
   }
 
   closeReasonModal();
-  refreshUI();
+
+  if (activeReviewReportId) {
+    updateReportOverallStatus(activeReviewReportId);
+    openReportApprovalModal(activeReviewReportId);
+  } else {
+    refreshUI();
+  }
 }
 
 // ================= TEAM STATS CHARTS =================
@@ -734,9 +960,23 @@ function setupAddExpenseForm() {
   document.getElementById("form-exp-type").innerHTML = `<option value="">Select Type (Select Category first)</option>`;
   document.getElementById("policy-verdict-indicator").innerHTML = "";
   
+  populateFormFolderDropdown();
+
   document.getElementById("upload-status-text").innerText = "Drag & drop receipt image or PDF here, or click to upload";
   document.getElementById("upload-box").style.borderColor = "var(--border-color)";
   document.getElementById("form-exp-receipt-file").value = "";
+}
+
+function populateFormFolderDropdown() {
+  const folderSelect = document.getElementById("form-exp-report-folder");
+  if (!folderSelect) return;
+  folderSelect.innerHTML = `<option value="">-- No Folder (Unassigned) --</option>`;
+  
+  let reports = expenseDb.getTable("reports") || [];
+  const userDraftFolders = reports.filter(r => r.employeeId === currentUser.employeeId && r.status === "DRAFT");
+  userDraftFolders.forEach(f => {
+    folderSelect.innerHTML += `<option value="${f.id}">📁 ${f.title} (${f.id})</option>`;
+  });
 }
 
 function cascadeCountry() {
@@ -852,6 +1092,7 @@ function saveExpenseWithStatus(targetStatus) {
     }
   }
 
+  const selectedFolderId = document.getElementById("form-exp-report-folder")?.value || null;
   const expId = editingDraftId || ("EXP0" + (expenseDb.getTable("expenses").length + 1));
   const newExpense = {
     id: expId,
@@ -869,7 +1110,7 @@ function saveExpenseWithStatus(targetStatus) {
     description: descVal,
     receiptUrl: receiptVal,
     status: targetStatus,
-    reportId: null,
+    reportId: selectedFolderId,
     remarks: remarksVal,
     dateCreated: new Date().toISOString().split("T")[0]
   };

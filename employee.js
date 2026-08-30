@@ -28,8 +28,31 @@ function initEmployeePortal() {
 
   // Setup drag and drop file upload listeners
   initDragAndDropUpload();
+  setupReportDateListeners();
 
   navigateToTab("dashboard");
+}
+
+function setupReportDateListeners() {
+  const startInput = document.getElementById("report-start-date");
+  const endInput = document.getElementById("report-end-date");
+  if (!startInput || !endInput) return;
+
+  startInput.addEventListener("change", () => {
+    if (startInput.value) {
+      endInput.min = startInput.value;
+      if (endInput.value && endInput.value < startInput.value) {
+        endInput.value = startInput.value;
+      }
+    }
+  });
+
+  endInput.addEventListener("change", () => {
+    if (startInput.value && endInput.value && endInput.value < startInput.value) {
+      alert("End Date cannot be earlier than Start Date.");
+      endInput.value = startInput.value;
+    }
+  });
 }
 
 function navigateToTab(tabName) {
@@ -162,8 +185,12 @@ function renderMyExpensesTable() {
     return;
   }
 
-  // Sort descending by date
-  const sorted = [...userExpenses].sort((a, b) => new Date(b.date) - new Date(a.date));
+  // Sort descending by date and ID
+  const sorted = [...userExpenses].sort((a, b) => {
+    const dDiff = new Date(b.date) - new Date(a.date);
+    if (dDiff !== 0) return dDiff;
+    return b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' });
+  });
 
   sorted.forEach(e => {
     const row = document.createElement("tr");
@@ -350,6 +377,9 @@ function setupAddExpenseForm() {
   // Default dropdown state for type (must select category first)
   document.getElementById("form-exp-type").innerHTML = `<option value="">Select Type (Select Category first)</option>`;
   
+  // Populate Folder / Report dropdown
+  populateFormFolderDropdown();
+
   // Clear indicator
   document.getElementById("policy-verdict-indicator").innerHTML = "";
   
@@ -476,6 +506,7 @@ function saveExpenseWithStatus(targetStatus) {
     }
   }
 
+  const selectedFolderId = document.getElementById("form-exp-report-folder")?.value || null;
   const expId = editingDraftId || ("EXP0" + (expenseDb.getTable("expenses").length + 1));
   const newExpense = {
     id: expId,
@@ -493,7 +524,7 @@ function saveExpenseWithStatus(targetStatus) {
     description: descVal,
     receiptUrl: receiptVal,
     status: targetStatus,
-    reportId: null,
+    reportId: selectedFolderId,
     remarks: remarksVal,
     dateCreated: new Date().toISOString().split("T")[0]
   };
@@ -511,7 +542,10 @@ function saveExpenseWithStatus(targetStatus) {
     `${editingDraftId ? 'Updated' : 'Logged new'} claim ${expId} for ${formatIDR(amountVal)} (${typeVal})`
   );
 
-  showToast(targetStatus === "DRAFT" ? "Draft saved successfully!" : "Expense added to pool. You can now bundle it into a report.", "success");
+  const msg = targetStatus === "DRAFT" 
+    ? "Draft saved successfully!" 
+    : "Expense added to pool. Attach it to an Expense Folder to submit for approval.";
+  showToast(msg, "success");
   
   editingDraftId = null; // Reset draft state
   navigateToTab("my-expenses");
@@ -740,14 +774,27 @@ function initExpenseReportsPage() {
   // Populate approver and verifier dropdowns
   populateReportUsersDropdowns();
   
-  // Render checkable unreported expenses
+  // Render checkable unreported expenses & draft folders
   renderUnreportedExpensesTable();
+  renderDraftFoldersTable();
   
   // Close any details view
   closeReportDetails();
   
   // Default to Create tab
   switchReportTab("create-report-subtab");
+}
+
+function populateFormFolderDropdown() {
+  const folderSelect = document.getElementById("form-exp-report-folder");
+  if (!folderSelect) return;
+  folderSelect.innerHTML = `<option value="">-- No Folder (Unassigned) --</option>`;
+  
+  let reports = expenseDb.getTable("reports") || [];
+  const userDraftFolders = reports.filter(r => r.employeeId === currentUser.employeeId && r.status === "DRAFT");
+  userDraftFolders.forEach(f => {
+    folderSelect.innerHTML += `<option value="${f.id}">📁 ${f.title} (${f.id})</option>`;
+  });
 }
 
 function switchReportTab(subtabId) {
@@ -764,6 +811,7 @@ function switchReportTab(subtabId) {
     btnCreate.className = "btn btn-primary";
     btnHistory.className = "btn btn-secondary";
     renderUnreportedExpensesTable();
+    renderDraftFoldersTable();
   } else {
     btnCreate.className = "btn btn-secondary";
     btnHistory.className = "btn btn-primary";
@@ -797,22 +845,26 @@ function renderUnreportedExpensesTable() {
   // Filter John or David's own unreported expenses that are not linked to a report yet
   const unreported = expenses.filter(e => 
     e.employeeId === currentUser.employeeId && 
-    e.status === "UNREPORTED" && 
+    (e.status === "UNREPORTED" || e.status === "DRAFT") && 
     (!e.reportId)
   );
   
   const container = document.getElementById("unreported-expenses-table-body");
+  if (!container) return;
   container.innerHTML = "";
   
   // Uncheck select all
-  document.getElementById("select-all-expenses").checked = false;
+  const selectAll = document.getElementById("select-all-expenses");
+  if (selectAll) selectAll.checked = false;
   
   if (unreported.length === 0) {
-    container.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No unreported expenses. Please add some expenses first.</td></tr>`;
+    container.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No unassigned expenses. Add expenses first or select them into a folder.</td></tr>`;
     return;
   }
   
-  unreported.forEach(e => {
+  const sortedUnreported = [...unreported].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
+
+  sortedUnreported.forEach(e => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td style="text-align: center;"><input type="checkbox" class="expense-select-chk" value="${e.id}"></td>
@@ -832,6 +884,202 @@ function toggleSelectAllExpenses(masterCheckbox) {
   });
 }
 
+function handleDraftFolderCreate() {
+  const title = document.getElementById("report-title").value.trim();
+  const startDate = document.getElementById("report-start-date").value;
+  const endDate = document.getElementById("report-end-date").value;
+  const approver = document.getElementById("report-approver").value;
+  const verifier = document.getElementById("report-verifier").value;
+  
+  if (!title) {
+    alert("Please enter a Report / Folder Title.");
+    return;
+  }
+  
+  if (startDate && endDate && startDate > endDate) {
+    alert("End Date cannot be earlier than Start Date. Please select a valid date range.");
+    return;
+  }
+  
+  const selectedCheckboxes = document.querySelectorAll(".expense-select-chk:checked");
+  const selectedIds = Array.from(selectedCheckboxes).map(chk => chk.value);
+  
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const rptId = "RPT" + String(reports.length + 1).padStart(3, '0');
+  
+  const expenses = expenseDb.getTable("expenses");
+  const userCurrency = getUserCurrency();
+  let totalSum = 0;
+  selectedIds.forEach(id => {
+    const exp = expenses.find(e => e.id === id);
+    if (exp) {
+      totalSum += convertCurrency(exp.amount, exp.currency || "IDR", userCurrency);
+    }
+  });
+
+  const selectedExpenses = selectedIds.map(id => expenses.find(e => e.id === id)).filter(Boolean);
+  const cleanRange = sanitizeReportDateRange(startDate, endDate, selectedExpenses);
+
+  const newFolder = {
+    id: rptId,
+    title,
+    startDate: cleanRange.startDate,
+    endDate: cleanRange.endDate,
+    approver,
+    verifier,
+    employeeId: currentUser.employeeId,
+    employeeName: currentUser.name,
+    status: "DRAFT",
+    totalAmount: totalSum,
+    dateCreated: new Date().toISOString().split("T")[0]
+  };
+  
+  expenseDb.addRecord("reports", newFolder);
+  
+  selectedIds.forEach(id => {
+    expenseDb.updateRecord("expenses", "id", id, {
+      reportId: rptId
+    });
+  });
+  
+  expenseDb.addLog(
+    currentUser.employeeId,
+    currentUser.name,
+    "Create Draft Folder",
+    `Created draft expense folder ${rptId} (${title}).`
+  );
+  
+  showToast(`Draft Folder ${rptId} created! You can attach expenses to it or submit it for approval anytime.`, "success");
+  
+  document.getElementById("report-creation-form").reset();
+  document.getElementById("report-start-date").valueAsDate = new Date();
+  document.getElementById("report-end-date").valueAsDate = new Date();
+  populateReportUsersDropdowns();
+  populateFormFolderDropdown();
+  renderUnreportedExpensesTable();
+  renderDraftFoldersTable();
+}
+
+function renderDraftFoldersTable() {
+  const container = document.getElementById("draft-folders-table-body");
+  if (!container) return;
+  
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const userDrafts = reports.filter(r => r.employeeId === currentUser.employeeId && r.status === "DRAFT");
+  const expenses = expenseDb.getTable("expenses");
+  const userCurrency = getUserCurrency();
+  
+  container.innerHTML = "";
+  
+  if (userDrafts.length === 0) {
+    container.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No draft folders yet. Fill in the form above to create one.</td></tr>`;
+    return;
+  }
+  
+  const sortedDrafts = [...userDrafts].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
+
+  sortedDrafts.forEach(folder => {
+    const folderExpenses = expenses.filter(e => e.reportId === folder.id);
+    const cleanRange = sanitizeReportDateRange(folder.startDate, folder.endDate, folderExpenses);
+    let currentTotal = 0;
+    folderExpenses.forEach(e => {
+      currentTotal += convertCurrency(e.amount, e.currency || "IDR", userCurrency);
+    });
+    
+    if (folder.totalAmount !== currentTotal || folder.startDate !== cleanRange.startDate || folder.endDate !== cleanRange.endDate) {
+      expenseDb.updateRecord("reports", "id", folder.id, { 
+        totalAmount: currentTotal,
+        startDate: cleanRange.startDate,
+        endDate: cleanRange.endDate
+      });
+    }
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewReportDetails('${folder.id}')"><i class="fa-solid fa-folder"></i> ${folder.id}</td>
+      <td style="font-weight: 600; cursor: pointer;" onclick="viewReportDetails('${folder.id}')">${folder.title}</td>
+      <td>${formatDate(cleanRange.startDate)} - ${formatDate(cleanRange.endDate)}</td>
+      <td>${folder.approver || "Not Set"}</td>
+      <td style="text-align: center;"><span class="badge" style="background: rgba(79,70,229,0.1); color: var(--primary); padding: 2px 8px; border-radius: 12px; font-weight: 700;">${folderExpenses.length} items</span></td>
+      <td style="font-weight: 600; text-align: right;">${formatAmount(currentTotal, userCurrency)}</td>
+      <td style="text-align: center;"><span class="status-badge draft">DRAFT</span></td>
+      <td style="text-align: center;">
+        <div class="action-buttons" style="justify-content: center;">
+          <button class="btn btn-secondary btn-sm" onclick="viewReportDetails('${folder.id}')">Manage / View</button>
+          <button class="btn btn-primary btn-sm" onclick="submitDraftFolder('${folder.id}')"><i class="fa-solid fa-paper-plane"></i> Submit</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteDraftFolder('${folder.id}')"><i class="fa-solid fa-trash"></i></button>
+        </div>
+      </td>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function submitDraftFolder(reportId) {
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const folder = reports.find(r => r.id === reportId);
+  if (!folder) return;
+
+  const expenses = expenseDb.getTable("expenses");
+  const folderExpenses = expenses.filter(e => e.reportId === reportId);
+
+  if (folderExpenses.length === 0) {
+    alert("This folder is empty. Please attach at least one expense before submitting.");
+    return;
+  }
+  
+  if (!folder.approver) {
+    alert("Please assign an Approver to this folder before submitting.");
+    return;
+  }
+
+  // Update folder status to PENDING_MANAGER
+  expenseDb.updateRecord("reports", "id", reportId, { status: "PENDING_MANAGER" });
+
+  // Update expenses status inside folder
+  folderExpenses.forEach(e => {
+    expenseDb.updateRecord("expenses", "id", e.id, { status: "PENDING_MANAGER" });
+  });
+
+  expenseDb.addLog(
+    currentUser.employeeId,
+    currentUser.name,
+    "Submit Expense Folder",
+    `Submitted draft expense folder ${reportId} containing ${folderExpenses.length} claims for Manager approval.`
+  );
+
+  showToast(`Folder ${reportId} submitted successfully for Manager approval!`, "success");
+
+  renderDraftFoldersTable();
+  renderReportsHistoryTable();
+  closeReportDetails();
+}
+
+function deleteDraftFolder(reportId) {
+  if (confirm(`Delete draft folder ${reportId}? Contained expenses will become unassigned.`)) {
+    const expenses = expenseDb.getTable("expenses");
+    expenses.filter(e => e.reportId === reportId).forEach(e => {
+      expenseDb.updateRecord("expenses", "id", e.id, { reportId: null });
+    });
+    expenseDb.deleteRecord("reports", "id", reportId);
+    showToast(`Draft folder ${reportId} deleted.`, "info");
+    renderDraftFoldersTable();
+    renderUnreportedExpensesTable();
+    populateFormFolderDropdown();
+  }
+}
+
+function detachExpenseFromReport(expId, reportId) {
+  expenseDb.updateRecord("expenses", "id", expId, { reportId: null, status: "UNREPORTED" });
+  showToast(`Expense ${expId} removed from folder.`, "info");
+  viewReportDetails(reportId);
+  renderDraftFoldersTable();
+  renderUnreportedExpensesTable();
+}
+
 function handleReportSubmit(event) {
   event.preventDefault();
   
@@ -841,12 +1089,17 @@ function handleReportSubmit(event) {
   const approver = document.getElementById("report-approver").value;
   const verifier = document.getElementById("report-verifier").value;
   
+  if (startDate && endDate && startDate > endDate) {
+    alert("End Date cannot be earlier than Start Date. Please select a valid date range.");
+    return;
+  }
+  
   // Get selected checkboxes
   const selectedCheckboxes = document.querySelectorAll(".expense-select-chk:checked");
   const selectedIds = Array.from(selectedCheckboxes).map(chk => chk.value);
   
   if (selectedIds.length === 0) {
-    alert("Please select at least one unreported expense to include in this report.");
+    alert("Please select at least one expense to include in this report.");
     return;
   }
   
@@ -861,16 +1114,17 @@ function handleReportSubmit(event) {
     }
   });
   
-  // Generate Report ID
   let reports = expenseDb.getTable("reports");
   if (!reports) reports = [];
   const rptId = "RPT" + String(reports.length + 1).padStart(3, '0');
-  
+  const selectedExpenses = selectedIds.map(id => expenses.find(e => e.id === id)).filter(Boolean);
+  const cleanRange = sanitizeReportDateRange(startDate, endDate, selectedExpenses);
+
   const newReport = {
     id: rptId,
     title,
-    startDate,
-    endDate,
+    startDate: cleanRange.startDate,
+    endDate: cleanRange.endDate,
     approver,
     verifier,
     employeeId: currentUser.employeeId,
@@ -880,10 +1134,8 @@ function handleReportSubmit(event) {
     dateCreated: new Date().toISOString().split("T")[0]
   };
   
-  // Save report to database
   expenseDb.addRecord("reports", newReport);
   
-  // Update each selected expense
   selectedIds.forEach(id => {
     expenseDb.updateRecord("expenses", "id", id, {
       status: "PENDING_MANAGER",
@@ -891,45 +1143,52 @@ function handleReportSubmit(event) {
     });
   });
   
-  // Log action
   expenseDb.addLog(
-    currentUser.employeeId,
-    currentUser.name,
-    "Submit Expense Report",
-    `Submitted expense report ${rptId} containing ${selectedIds.length} claims for a total of ${formatAmount(totalSum, userCurrency)}.`
+    currentUser.employeeId, 
+    currentUser.name, 
+    "Submit Expense Report", 
+    `Submitted report ${rptId} containing ${selectedIds.length} items amounting to ${formatAmount(totalSum, userCurrency)}`
   );
   
-  showToast(`Report ${rptId} submitted successfully for Manager approval!`, "success");
+  showToast(`Expense Report ${rptId} created and submitted for approval!`, "success");
   
-  // Switch to history tab
-  switchReportTab("history-report-subtab");
+  document.getElementById("report-creation-form").reset();
+  document.getElementById("report-start-date").valueAsDate = new Date();
+  document.getElementById("report-end-date").valueAsDate = new Date();
+  populateReportUsersDropdowns();
+  populateFormFolderDropdown();
+  renderUnreportedExpensesTable();
+  renderReportsHistoryTable();
 }
 
 function renderReportsHistoryTable() {
+  const container = document.getElementById("reports-history-table-body");
+  if (!container) return;
+  
   let reports = expenseDb.getTable("reports");
   if (!reports) reports = [];
+  const userReports = reports.filter(r => r.employeeId === currentUser.employeeId && r.status !== "DRAFT");
+  const expenses = expenseDb.getTable("expenses");
   const userCurrency = getUserCurrency();
   
-  // Filter for employee's own reports
-  const userReports = reports.filter(r => r.employeeId === currentUser.employeeId);
-  
-  const container = document.getElementById("reports-history-table-body");
   container.innerHTML = "";
   
   if (userReports.length === 0) {
-    container.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No reports created yet.</td></tr>`;
+    container.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No submitted reports created yet.</td></tr>`;
     return;
   }
   
-  // Sort descending by ID
-  const sorted = [...userReports].sort((a, b) => b.id.localeCompare(a.id));
+  const sorted = [...userReports].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
   
   sorted.forEach(r => {
+    const folderExpenses = expenses.filter(e => e.reportId === r.id);
+    const cleanRange = sanitizeReportDateRange(r.startDate, r.endDate, folderExpenses);
+
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td style="font-weight: 700; color: var(--primary);">${r.id}</td>
-      <td style="font-weight: 600;">${r.title}</td>
-      <td>${formatDate(r.startDate)} - ${formatDate(r.endDate)}</td>
+      <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewReportDetails('${r.id}')">${r.id}</td>
+      <td style="font-weight: 600; cursor: pointer;" onclick="viewReportDetails('${r.id}')">${r.title}</td>
+      <td>${formatDate(cleanRange.startDate)} - ${formatDate(cleanRange.endDate)}</td>
       <td>${r.approver}</td>
       <td>${r.verifier}</td>
       <td style="font-weight: 600;">${formatAmount(r.totalAmount, userCurrency)}</td>
@@ -942,47 +1201,136 @@ function renderReportsHistoryTable() {
   });
 }
 
+let activeEmployeeReportId = null;
+
 function viewReportDetails(reportId) {
+  activeEmployeeReportId = reportId;
   const reports = expenseDb.getTable("reports");
   const report = reports.find(r => r.id === reportId);
   if (!report) return;
   
   const userCurrency = getUserCurrency();
-  
-  document.getElementById("det-report-id").innerText = report.id;
-  document.getElementById("det-report-title").innerText = report.title;
-  document.getElementById("det-report-status").innerText = report.status.replace("_", " ");
-  document.getElementById("det-report-dates").innerText = `${formatDate(report.startDate)} to ${formatDate(report.endDate)}`;
-  document.getElementById("det-report-created").innerText = formatDate(report.dateCreated);
-  document.getElementById("det-report-approver").innerText = report.approver;
-  document.getElementById("det-report-verifier").innerText = report.verifier;
-  document.getElementById("det-report-total").innerText = formatAmount(report.totalAmount, userCurrency);
-  
-  // Get expenses linked to this report
   const expenses = expenseDb.getTable("expenses");
   const reportExpenses = expenses.filter(e => e.reportId === report.id);
+  const cleanRange = sanitizeReportDateRange(report.startDate, report.endDate, reportExpenses);
   
+  document.getElementById("det-report-id").innerText = report.id;
+  document.getElementById("det-report-title").innerHTML = `<i class="fa-solid fa-folder-open"></i> Folder Details: ${report.title} (${report.id})`;
+  
+  const statusEl = document.getElementById("det-report-status");
+  statusEl.innerText = report.status.replace(/_/g, " ");
+  statusEl.className = `status-badge ${report.status.toLowerCase()}`;
+
+  document.getElementById("det-report-dates").innerText = `${formatDate(cleanRange.startDate)} to ${formatDate(cleanRange.endDate)}`;
+  document.getElementById("det-report-created").innerText = formatDate(report.dateCreated);
+  document.getElementById("det-report-approver").innerText = report.approver || "Not Set";
+  document.getElementById("det-report-verifier").innerText = report.verifier || "Not Set";
+  
+  let currentTotal = 0;
+  reportExpenses.forEach(e => {
+    currentTotal += convertCurrency(e.amount, e.currency || "IDR", userCurrency);
+  });
+  document.getElementById("det-report-total").innerText = formatAmount(currentTotal, userCurrency);
+
   const container = document.getElementById("report-expenses-details-body");
   container.innerHTML = "";
   
-  reportExpenses.forEach(e => {
+  if (reportExpenses.length === 0) {
+    container.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No expenses currently attached to this folder.</td></tr>`;
+  } else {
+    reportExpenses.forEach(e => {
+      const row = document.createElement("tr");
+      const detachBtn = report.status === "DRAFT" 
+        ? `<button class="btn btn-danger btn-sm" onclick="detachExpenseFromReport('${e.id}', '${report.id}')"><i class="fa-solid fa-minus-circle"></i> Remove</button>`
+        : `<span style="color: var(--text-muted); font-size:11px;">Locked</span>`;
+
+      row.innerHTML = `
+        <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewExpenseDetails('${e.id}')">${e.id}</td>
+        <td>${formatDate(e.date)}</td>
+        <td>${e.category}</td>
+        <td>${e.description}</td>
+        <td style="font-weight: 600; text-align: right;">${formatAmount(e.amount, e.currency)}</td>
+        <td style="text-align: center;">${detachBtn}</td>
+      `;
+      container.appendChild(row);
+    });
+  }
+
+  // Handle Unassigned Expenses section & Footer actions inside modal
+  const addSec = document.getElementById("folder-add-expenses-section");
+  const footerActions = document.getElementById("folder-footer-actions");
+  
+  if (report.status === "DRAFT") {
+    addSec.style.display = "block";
+    renderFolderUnassignedExpenses(report.id);
+    footerActions.innerHTML = `<button class="btn btn-primary" onclick="submitDraftFolder('${report.id}')"><i class="fa-solid fa-paper-plane"></i> Submit Folder for Approval</button>`;
+  } else {
+    addSec.style.display = "none";
+    footerActions.innerHTML = "";
+  }
+  
+  // Show modal overlay
+  document.getElementById("report-details-overlay").classList.add("active");
+}
+
+function renderFolderUnassignedExpenses(reportId) {
+  const container = document.getElementById("folder-unassigned-expenses-body");
+  if (!container) return;
+  
+  const expenses = expenseDb.getTable("expenses");
+  const unassigned = expenses.filter(e => e.employeeId === currentUser.employeeId && (e.status === "UNREPORTED" || e.status === "DRAFT") && !e.reportId);
+  const selectAll = document.getElementById("select-all-folder-add");
+  if (selectAll) selectAll.checked = false;
+
+  container.innerHTML = "";
+  if (unassigned.length === 0) {
+    container.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No unassigned expenses available to attach.</td></tr>`;
+    return;
+  }
+
+  unassigned.forEach(e => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${e.id}</td>
+      <td style="text-align: center;"><input type="checkbox" class="folder-add-select-chk" value="${e.id}"></td>
+      <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewExpenseDetails('${e.id}')">${e.id}</td>
       <td>${formatDate(e.date)}</td>
       <td>${e.category}</td>
       <td>${e.description}</td>
-      <td style="font-weight: 600;">${formatAmount(e.amount, e.currency)}</td>
+      <td style="font-weight: 600; text-align: right;">${formatAmount(e.amount, e.currency)}</td>
     `;
     container.appendChild(row);
   });
-  
-  // Show details panel
-  document.getElementById("report-details-container").style.display = "block";
+}
+
+function toggleSelectAllFolderAdd(masterCheckbox) {
+  document.querySelectorAll(".folder-add-select-chk").forEach(chk => {
+    chk.checked = masterCheckbox.checked;
+  });
+}
+
+function attachSelectedToActiveFolder() {
+  if (!activeEmployeeReportId) return;
+  const selectedCheckboxes = document.querySelectorAll(".folder-add-select-chk:checked");
+  const selectedIds = Array.from(selectedCheckboxes).map(chk => chk.value);
+
+  if (selectedIds.length === 0) {
+    alert("Please select at least one expense to attach.");
+    return;
+  }
+
+  selectedIds.forEach(id => {
+    expenseDb.updateRecord("expenses", "id", id, { reportId: activeEmployeeReportId });
+  });
+
+  showToast(`Attached ${selectedIds.length} expense(s) to folder.`, "success");
+  viewReportDetails(activeEmployeeReportId);
+  renderDraftFoldersTable();
+  renderUnreportedExpensesTable();
 }
 
 function closeReportDetails() {
-  document.getElementById("report-details-container").style.display = "none";
+  document.getElementById("report-details-overlay").classList.remove("active");
+  activeEmployeeReportId = null;
 }
 
 function filterHistoryTable(query) {
