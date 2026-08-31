@@ -3,64 +3,59 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>EXPENSE. ERP Login</title>
+  <title>EXPENSE. Enterprise ERP Login</title>
   
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <!-- CSS Stylesheet -->
-  <link rel="stylesheet" href="index.css">
+  <link rel="stylesheet" href="index.css?v=27">
 </head>
 <body class="login-body">
 
-  <div class="login-card">
-    <div class="login-header">
-      <div class="login-logo"><i class="fa-solid fa-wallet"></i> EXPENSE<span>.</span></div>
-      <p class="login-subtitle">Enterprise Resource Planning Portal</p>
-    </div>
-
-    <!-- Error Toast -->
-    <div class="login-error" id="login-error-box">
-      Invalid email address or security password.
-    </div>
-
-    <!-- Login Form -->
-    <form class="login-form" id="login-form">
-      <div class="form-group">
-        <label class="form-label">Corporate Email</label>
-        <input type="email" class="form-control" id="login-email" placeholder="name@expense.com" required>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-icon-box">
+          <i class="fa-solid fa-building-columns"></i>
+        </div>
+        <div class="login-logo">EXPENSE<span>.</span> ERP</div>
+        <p class="login-subtitle">Corporate Single Sign-On Portal</p>
       </div>
 
-      <div class="form-group">
-        <label class="form-label">Account Password</label>
-        <input type="password" class="form-control" id="login-password" placeholder="••••••••" required>
+      <!-- Security Status Badge -->
+      <div class="erp-security-bar">
+        <i class="fa-solid fa-shield-halved"></i> 256-Bit TLS Encrypted Connection
       </div>
 
-      <button type="submit" class="login-btn">Secure Login</button>
-    </form>
+      <!-- Error Toast -->
+      <div class="login-error" id="login-error-box">
+        <i class="fa-solid fa-circle-exclamation"></i> Invalid email address or security password.
+      </div>
 
-    <!-- Credential Shortcuts -->
-    <div class="cheat-sheet-title">Autofill Test Profiles</div>
-    <div class="cheat-sheet-grid">
-      <div class="cheat-badge" onclick="autofill('nikita@expense.com', 'admin123')">
-        <span class="cheat-role">Administrator</span>
-        <span class="cheat-email">Nikita</span>
-      </div>
-      <div class="cheat-badge" onclick="autofill('sarah@expense.com', 'manager123')">
-        <span class="cheat-role">Manager</span>
-        <span class="cheat-email">Sarah</span>
-      </div>
-      <div class="cheat-badge" onclick="autofill('john@expense.com', 'employee123')">
-        <span class="cheat-role">Employee</span>
-        <span class="cheat-email">John</span>
-      </div>
-      <div class="cheat-badge" onclick="autofill('finance@expense.com', 'finance123')">
-        <span class="cheat-role">Finance</span>
-        <span class="cheat-email">Finance User</span>
+      <!-- Login Form -->
+      <form class="login-form" id="login-form">
+        <div class="form-group">
+          <label class="form-label"><i class="fa-solid fa-envelope"></i> Corporate Email</label>
+          <input type="email" class="form-control" id="login-email" placeholder="name@expense.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label"><i class="fa-solid fa-lock"></i> Account Password</label>
+          <input type="password" class="form-control" id="login-password" placeholder="••••••••" required>
+        </div>
+
+        <button type="submit" class="login-btn">
+          <i class="fa-solid fa-right-to-bracket"></i> Secure ERP Login
+        </button>
+      </form>
+
+      <div class="login-footer">
+        EXPENSE ERP Suite v4.2 &bull; &copy; 2026 Enterprise Corp
       </div>
     </div>
   </div>
 
-  <script src="database.js"></script>
-  <script src="login.js"></script>
+  <script src="database.js?v=27"></script>
+  <script src="login.js?v=27"></script>
 </body>
 </html>

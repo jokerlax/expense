@@ -24,6 +24,7 @@ function initFinancePortal() {
     });
   });
 
+  renderFinPendingReports();
   navigateToTab("team-dashboard");
 }
 
@@ -241,6 +242,191 @@ function renderFinanceCharts() {
   });
 }
 
+// ================= SUBTAB NAVIGATION & HISTORY RENDERERS =================
+
+function switchFinVerifySubtab(tabKey) {
+  const btnPending = document.getElementById("fin-verify-btn-pending");
+  const btnHistory = document.getElementById("fin-verify-btn-history");
+  const subPending = document.getElementById("fin-verify-subtab-pending");
+  const subHistory = document.getElementById("fin-verify-subtab-history");
+
+  if (!btnPending || !btnHistory) return;
+
+  if (tabKey === "pending") {
+    btnPending.className = "btn btn-primary";
+    btnHistory.className = "btn btn-secondary";
+    if (subPending) subPending.style.display = "block";
+    if (subHistory) subHistory.style.display = "none";
+    renderFinPendingReports();
+  } else {
+    btnPending.className = "btn btn-secondary";
+    btnHistory.className = "btn btn-primary";
+    if (subPending) subPending.style.display = "none";
+    if (subHistory) subHistory.style.display = "block";
+    renderFinVerifyHistoryTable();
+  }
+}
+
+function renderFinVerifyHistoryTable() {
+  const container = document.getElementById("fin-verify-history-table-body");
+  if (!container) return;
+
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const expenses = expenseDb.getTable("expenses");
+  const userCurrency = getUserCurrency();
+
+  const historyReports = reports.filter(r => r.status !== "DRAFT" && r.status !== "PENDING_MANAGER");
+
+  container.innerHTML = "";
+  if (historyReports.length === 0) {
+    container.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No verification history available.</td></tr>`;
+    return;
+  }
+
+  const sorted = [...historyReports].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
+
+  sorted.forEach(r => {
+    const folderExpenses = expenses.filter(e => e.reportId === r.id);
+    const cleanRange = sanitizeReportDateRange(r.startDate, r.endDate, folderExpenses);
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="openFinReportApprovalModal('${r.id}')"><i class="fa-solid fa-folder"></i> ${r.id}</td>
+      <td style="font-weight: 600; cursor: pointer;" onclick="openFinReportApprovalModal('${r.id}')">${r.title}</td>
+      <td><strong>${r.employeeName}</strong></td>
+      <td>${formatDate(cleanRange.startDate)} - ${formatDate(cleanRange.endDate)}</td>
+      <td>${r.approver || "Not Set"}</td>
+      <td>${r.verifier || "Not Set"}</td>
+      <td style="font-weight: 600; text-align: right;">${formatAmount(r.totalAmount, userCurrency)}</td>
+      <td style="text-align: center;"><span class="status-badge ${r.status.toLowerCase()}">${r.status.replace(/_/g, " ")}</span></td>
+      <td style="text-align: center;">
+        <button class="btn btn-secondary btn-sm" onclick="openFinReportApprovalModal('${r.id}')">View</button>
+      </td>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function switchFinPaymentSubtab(tabKey) {
+  const btnPending = document.getElementById("fin-pay-btn-pending");
+  const btnHistory = document.getElementById("fin-pay-btn-history");
+  const subPending = document.getElementById("fin-pay-subtab-pending");
+  const subHistory = document.getElementById("fin-pay-subtab-history");
+
+  if (!btnPending || !btnHistory) return;
+
+  if (tabKey === "pending") {
+    btnPending.className = "btn btn-primary";
+    btnHistory.className = "btn btn-secondary";
+    if (subPending) subPending.style.display = "block";
+    if (subHistory) subHistory.style.display = "none";
+    renderPaymentProcessingTable();
+  } else {
+    btnPending.className = "btn btn-secondary";
+    btnHistory.className = "btn btn-primary";
+    if (subPending) subPending.style.display = "none";
+    if (subHistory) subHistory.style.display = "block";
+    renderFinPaymentHistoryTable();
+  }
+}
+
+function renderFinPaymentHistoryTable() {
+  const container = document.getElementById("fin-pay-history-table-body");
+  if (!container) return;
+
+  const reimbursements = expenseDb.getTable("reimbursements") || [];
+  container.innerHTML = "";
+
+  if (reimbursements.length === 0) {
+    container.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">No completed settlement history records.</td></tr>`;
+    return;
+  }
+
+  const sorted = [...reimbursements].sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate));
+
+  sorted.forEach(r => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td style="font-weight: 700; color: var(--text-muted);">${r.id}</td>
+      <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewExpenseDetails('${r.expenseId}')">${r.expenseId}</td>
+      <td><strong>${r.employeeName}</strong></td>
+      <td style="font-weight: 600; text-align: right;">${formatIDR(r.amount)}</td>
+      <td>${r.paymentMethod}</td>
+      <td>${formatDate(r.paymentDate)}</td>
+      <td style="text-align: center;"><span class="status-badge approved">PAID</span></td>
+      <td style="text-align: center;">
+        <button class="btn btn-secondary btn-sm" onclick="viewExpenseDetails('${r.expenseId}')">View</button>
+      </td>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function switchFinReimSubtab(tabKey) {
+  const btnTracking = document.getElementById("fin-reim-btn-tracking");
+  const btnFolders = document.getElementById("fin-reim-btn-folders");
+  const subTracking = document.getElementById("fin-reim-subtab-tracking");
+  const subFolders = document.getElementById("fin-reim-subtab-folders");
+
+  if (!btnTracking || !btnFolders) return;
+
+  if (tabKey === "tracking") {
+    btnTracking.className = "btn btn-primary";
+    btnFolders.className = "btn btn-secondary";
+    if (subTracking) subTracking.style.display = "block";
+    if (subFolders) subFolders.style.display = "none";
+    renderReimbursementTrackingTable();
+  } else {
+    btnTracking.className = "btn btn-secondary";
+    btnFolders.className = "btn btn-primary";
+    if (subTracking) subTracking.style.display = "none";
+    if (subFolders) subFolders.style.display = "block";
+    renderFinReimFoldersTable();
+  }
+}
+
+function renderFinReimFoldersTable() {
+  const container = document.getElementById("fin-reim-folders-table-body");
+  if (!container) return;
+
+  let reports = expenseDb.getTable("reports");
+  if (!reports) reports = [];
+  const expenses = expenseDb.getTable("expenses");
+  const userCurrency = getUserCurrency();
+
+  const paidReports = reports.filter(r => r.status === "PAID");
+
+  container.innerHTML = "";
+  if (paidReports.length === 0) {
+    container.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No fully paid/reimbursed expense folders yet.</td></tr>`;
+    return;
+  }
+
+  const sorted = [...paidReports].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true, sensitivity: 'base' }));
+
+  sorted.forEach(r => {
+    const folderExpenses = expenses.filter(e => e.reportId === r.id);
+    const cleanRange = sanitizeReportDateRange(r.startDate, r.endDate, folderExpenses);
+
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="openFinReportApprovalModal('${r.id}')"><i class="fa-solid fa-folder"></i> ${r.id}</td>
+      <td style="font-weight: 600; cursor: pointer;" onclick="openFinReportApprovalModal('${r.id}')">${r.title}</td>
+      <td><strong>${r.employeeName}</strong></td>
+      <td>${formatDate(cleanRange.startDate)} - ${formatDate(cleanRange.endDate)}</td>
+      <td>${r.approver || "Not Set"}</td>
+      <td>${r.verifier || "Not Set"}</td>
+      <td style="font-weight: 600; text-align: right;">${formatAmount(r.totalAmount, userCurrency)}</td>
+      <td style="text-align: center;"><span class="status-badge approved">PAID</span></td>
+      <td style="text-align: center;">
+        <button class="btn btn-secondary btn-sm" onclick="openFinReportApprovalModal('${r.id}')">View</button>
+      </td>
+    `;
+    container.appendChild(row);
+  });
+}
+
 // ================= FINANCE VERIFICATION & FOLDER APPROVALS =================
 
 let activeFinReportId = null;
@@ -436,11 +622,13 @@ function updateReportOverallStatus(reportId) {
 }
 
 function renderVerificationTable() {
+  const container = document.getElementById("tbl-finance-verify");
+  if (!container) return;
+
   const expenses = expenseDb.getTable("expenses");
   const pendingVerify = expenses.filter(e => e.status === "PENDING_FINANCE");
   const userCurrency = getUserCurrency();
 
-  const container = document.getElementById("tbl-finance-verify");
   container.innerHTML = "";
 
   if (pendingVerify.length === 0) {
@@ -515,23 +703,37 @@ function renderPaymentProcessingTable() {
 function renderReimbursementTrackingTable(records = null) {
   if (!records) records = expenseDb.getTable("reimbursements");
   const container = document.getElementById("tbl-reimbursement-track");
+  if (!container) return;
   container.innerHTML = "";
 
-  if (records.length === 0) {
-    container.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">No historical paid disbursements found.</td></tr>`;
+  if (!records || records.length === 0) {
+    container.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted);">No historical paid disbursements found.</td></tr>`;
     return;
   }
 
+  const expenses = expenseDb.getTable("expenses") || [];
+
   [...records].sort((a, b) => new Date(b.paymentDate) - new Date(a.paymentDate)).forEach(r => {
+    const exp = expenses.find(e => e.id === r.expenseId);
+    const folderId = exp && exp.reportId ? exp.reportId : "Direct";
+
+    const folderCell = (folderId !== "Direct" && folderId !== "N/A")
+      ? `<span style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="openFinReportApprovalModal('${folderId}')"><i class="fa-solid fa-folder"></i> ${folderId}</span>`
+      : `<span style="color: var(--text-muted); font-style: italic;">Individual</span>`;
+
     const row = document.createElement("tr");
     row.innerHTML = `
       <td style="font-weight: 700; color: var(--text-muted);">${r.id}</td>
       <td style="font-weight: 700; color: var(--primary); cursor: pointer;" onclick="viewExpenseDetails('${r.expenseId}')">${r.expenseId}</td>
+      <td>${folderCell}</td>
       <td><strong>${r.employeeName}</strong></td>
       <td style="font-weight: 600; text-align: right;">${formatIDR(r.amount)}</td>
       <td>${r.paymentMethod}</td>
       <td>${formatDate(r.paymentDate)}</td>
       <td style="text-align: center;"><span class="status-badge approved">${r.status}</span></td>
+      <td style="text-align: center;">
+        <button class="btn btn-secondary btn-sm" onclick="viewExpenseDetails('${r.expenseId}')"><i class="fa-solid fa-eye"></i> View</button>
+      </td>
     `;
     container.appendChild(row);
   });

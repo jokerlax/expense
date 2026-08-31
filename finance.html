@@ -11,7 +11,7 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <!-- CSS Stylesheet -->
-  <link rel="stylesheet" href="index.css">
+  <link rel="stylesheet" href="index.css?v=25">
 
   <script>
     // Security Page Guard
@@ -145,112 +145,214 @@
 
         <!-- 1. FINANCE VERIFICATION PANEL -->
         <section class="panel-view" id="view-finance-verify" style="display: none;">
-          <div class="d-flex justify-between align-center mb-4">
-            <h2 class="card-title"><i class="fa-solid fa-file-invoice-dollar"></i> Finance Audit &amp; Verification</h2>
+          <div class="d-flex justify-between align-center mb-3">
+            <h2 class="card-title"><i class="fa-solid fa-file-invoice-dollar"></i> Finance Audit &amp; Verification Desk</h2>
           </div>
 
-          <!-- Section 1A: Pending Expense Folders -->
-          <div class="dashboard-card mb-4">
-            <h3 class="card-title mb-3"><i class="fa-solid fa-folder-closed"></i> Pending Expense Folders &amp; Reports for Finance Verification</h3>
-            <div class="table-container">
-              <table class="custom-table">
-                <thead>
-                  <tr>
-                    <th>Report / Folder ID</th>
-                    <th>Title</th>
-                    <th>Employee</th>
-                    <th>Date Range</th>
-                    <th style="text-align: center;">Items Attached</th>
-                    <th style="text-align: right;">Total Amount</th>
-                    <th style="text-align: center;">Status</th>
-                    <th style="text-align: center;">Action</th>
-                  </tr>
-                </thead>
-                <tbody id="fin-pending-reports-table-body">
-                  <!-- Loaded dynamically -->
-                </tbody>
-              </table>
+          <!-- Subtab toggle buttons -->
+          <div class="mb-4 d-flex gap-2">
+            <button class="btn btn-primary" id="fin-verify-btn-pending" onclick="switchFinVerifySubtab('pending')">
+              <i class="fa-solid fa-clock"></i> Pending Verification
+            </button>
+            <button class="btn btn-secondary" id="fin-verify-btn-history" onclick="switchFinVerifySubtab('history')">
+              <i class="fa-solid fa-clock-rotate-left"></i> Verification History
+            </button>
+          </div>
+
+          <!-- Subtab 1: Pending Verification -->
+          <div class="fin-verify-subtab-content" id="fin-verify-subtab-pending" style="display: block;">
+            <div class="dashboard-card mb-4">
+              <h3 class="card-title mb-3"><i class="fa-solid fa-folder-closed"></i> Pending Expense Folders &amp; Reports for Finance Verification</h3>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Report / Folder ID</th>
+                      <th>Title</th>
+                      <th>Employee</th>
+                      <th>Date Range</th>
+                      <th style="text-align: center;">Items Attached</th>
+                      <th style="text-align: right;">Total Amount</th>
+                      <th style="text-align: center;">Status</th>
+                      <th style="text-align: center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fin-pending-reports-table-body">
+                    <!-- Loaded dynamically -->
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
-          <!-- Section 1B: Pending Individual Claims -->
-          <div class="dashboard-card">
-            <h3 class="card-title mb-3"><i class="fa-solid fa-receipt"></i> Pending Individual Expense Claims</h3>
-            <div class="table-container">
-              <table class="custom-table">
-                <thead>
-                  <tr>
-                    <th>Expense ID</th>
-                    <th>Employee Name</th>
-                    <th>Category</th>
-                    <th>Type</th>
-                    <th style="text-align: right;">Claim Amount</th>
-                    <th>Payment Method</th>
-                    <th style="text-align: center;">Status</th>
-                    <th style="text-align: center;">Actions</th>
-                  </tr>
-                </thead>
-                <tbody id="tbl-finance-verify">
-                  <!-- Loaded dynamically -->
-                </tbody>
-              </table>
+          <!-- Subtab 2: Verification History -->
+          <div class="fin-verify-subtab-content" id="fin-verify-subtab-history" style="display: none;">
+            <div class="dashboard-card mb-4">
+              <h3 class="card-title mb-3"><i class="fa-solid fa-box-archive"></i> Finance Verification &amp; Decision History</h3>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Report / Folder ID</th>
+                      <th>Title</th>
+                      <th>Employee</th>
+                      <th>Date Range</th>
+                      <th>Approver</th>
+                      <th>Verifier</th>
+                      <th style="text-align: right;">Total Amount</th>
+                      <th style="text-align: center;">Status</th>
+                      <th style="text-align: center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fin-verify-history-table-body">
+                    <!-- Loaded dynamically -->
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </section>
 
         <!-- 2. PAYMENT PROCESSING PANEL -->
         <section class="panel-view" id="view-payment-processing" style="display: none;">
-          <div class="d-flex justify-between align-center mb-4">
-            <h2 class="card-title">Clear Payout Settlements</h2>
+          <div class="d-flex justify-between align-center mb-3">
+            <h2 class="card-title"><i class="fa-solid fa-money-bill-transfer"></i> Clear Payout Settlements</h2>
           </div>
 
-          <div class="table-container">
-            <table class="custom-table">
-              <thead>
-                <tr>
-                  <th>Expense ID</th>
-                  <th>Employee Name</th>
-                  <th style="text-align: right;">Claim Amount</th>
-                  <th>Payment Method</th>
-                  <th style="text-align: center;">Status</th>
-                  <th style="text-align: center;">Action</th>
-                </tr>
-              </thead>
-              <tbody id="tbl-payment-processing">
-                <!-- Loaded dynamically -->
-              </tbody>
-            </table>
+          <!-- Subtab toggle buttons -->
+          <div class="mb-4 d-flex gap-2">
+            <button class="btn btn-primary" id="fin-pay-btn-pending" onclick="switchFinPaymentSubtab('pending')">
+              <i class="fa-solid fa-money-bill-wave"></i> Pending Payout Settlements
+            </button>
+            <button class="btn btn-secondary" id="fin-pay-btn-history" onclick="switchFinPaymentSubtab('history')">
+              <i class="fa-solid fa-clock-rotate-left"></i> Settlement Payout History
+            </button>
+          </div>
+
+          <!-- Subtab 1: Pending Settlements -->
+          <div class="fin-pay-subtab-content" id="fin-pay-subtab-pending" style="display: block;">
+            <div class="dashboard-card">
+              <h3 class="card-title mb-3"><i class="fa-solid fa-hourglass-half"></i> Claims Ready for Settlement</h3>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Expense ID</th>
+                      <th>Employee Name</th>
+                      <th style="text-align: right;">Claim Amount</th>
+                      <th>Payment Method</th>
+                      <th style="text-align: center;">Status</th>
+                      <th style="text-align: center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbl-payment-processing">
+                    <!-- Loaded dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Subtab 2: Settlement History -->
+          <div class="fin-pay-subtab-content" id="fin-pay-subtab-history" style="display: none;">
+            <div class="dashboard-card">
+              <h3 class="card-title mb-3"><i class="fa-solid fa-receipt"></i> Completed Payout Settlement History</h3>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Settlement ID</th>
+                      <th>Expense ID</th>
+                      <th>Employee Name</th>
+                      <th style="text-align: right;">Paid Amount</th>
+                      <th>Payment Method</th>
+                      <th>Payment Date</th>
+                      <th style="text-align: center;">Status</th>
+                      <th style="text-align: center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fin-pay-history-table-body">
+                    <!-- Loaded dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
 
         <!-- 3. REIMBURSEMENT TRACKING PANEL -->
         <section class="panel-view" id="view-reimbursement-track" style="display: none;">
-          <div class="d-flex justify-between align-center mb-4">
-            <h2 class="card-title">Reimbursement Payment Tracking</h2>
-            <div class="d-flex align-center">
-              <input type="text" class="form-control" id="reim-search-input" placeholder="Search tracking ledger..."
-                oninput="filterReimbursementsTable(this.value)"
-                style="width: 220px; height: 32px; padding: 4px 10px; font-size:12px;">
+          <div class="d-flex justify-between align-center mb-3">
+            <h2 class="card-title"><i class="fa-solid fa-receipt"></i> Reimbursement Payment Tracking</h2>
+          </div>
+
+          <!-- Subtab toggle buttons -->
+          <div class="mb-4 d-flex gap-2">
+            <button class="btn btn-primary" id="fin-reim-btn-tracking" onclick="switchFinReimSubtab('tracking')">
+              <i class="fa-solid fa-list-check"></i> Individual Disbursement Ledger
+            </button>
+            <button class="btn btn-secondary" id="fin-reim-btn-folders" onclick="switchFinReimSubtab('folders')">
+              <i class="fa-solid fa-folder-check"></i> Reimbursed Folders History
+            </button>
+          </div>
+
+          <!-- Subtab 1: Individual Ledger -->
+          <div class="fin-reim-subtab-content" id="fin-reim-subtab-tracking" style="display: block;">
+            <div class="dashboard-card">
+              <div class="d-flex justify-between align-center mb-3">
+                <h3 class="card-title"><i class="fa-solid fa-table-list"></i> Disbursement Payment Records</h3>
+                <input type="text" class="form-control" id="reim-search-input" placeholder="Search tracking ledger..."
+                  oninput="filterReimbursementsTable(this.value)"
+                  style="width: 220px; height: 32px; padding: 4px 10px; font-size:12px;">
+              </div>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Reimbursement ID</th>
+                      <th>Expense ID</th>
+                      <th>Folder ID</th>
+                      <th>Employee Name</th>
+                      <th style="text-align: right;">Paid Amount</th>
+                      <th>Payment Method</th>
+                      <th>Payment Date</th>
+                      <th style="text-align: center;">Status</th>
+                      <th style="text-align: center;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="tbl-reimbursement-track">
+                    <!-- Loaded dynamically -->
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
-          <div class="table-container">
-            <table class="custom-table">
-              <thead>
-                <tr>
-                  <th>Reimbursement ID</th>
-                  <th>Expense ID</th>
-                  <th>Employee Name</th>
-                  <th style="text-align: right;">Paid Amount</th>
-                  <th>Payment Method</th>
-                  <th>Payment Date</th>
-                  <th style="text-align: center;">Status</th>
-                </tr>
-              </thead>
-              <tbody id="tbl-reimbursement-track">
-                <!-- Loaded dynamically -->
-              </tbody>
-            </table>
+          <!-- Subtab 2: Reimbursed Folders -->
+          <div class="fin-reim-subtab-content" id="fin-reim-subtab-folders" style="display: none;">
+            <div class="dashboard-card">
+              <h3 class="card-title mb-3"><i class="fa-solid fa-folder-check"></i> Paid &amp; Completed Expense Folders</h3>
+              <div class="table-container">
+                <table class="custom-table">
+                  <thead>
+                    <tr>
+                      <th>Report / Folder ID</th>
+                      <th>Title</th>
+                      <th>Employee</th>
+                      <th>Date Range</th>
+                      <th>Approver</th>
+                      <th>Verifier</th>
+                      <th style="text-align: right;">Total Paid</th>
+                      <th style="text-align: center;">Status</th>
+                      <th style="text-align: center;">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody id="fin-reim-folders-table-body">
+                    <!-- Loaded dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -789,8 +891,8 @@
   </div>
 
   <!-- JS CONTROLLERS -->
-  <script src="database.js?v=14"></script>
-  <script src="finance.js?v=14"></script>
+  <script src="database.js?v=25"></script>
+  <script src="finance.js?v=25"></script>
 </body>
 
 </html>
