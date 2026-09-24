@@ -92,9 +92,5 @@ python -m unittest discover -s tests
    - **Environment**: `Python 3`
    - **Build Command**: `pip install -r requirements.txt`
    - **Start Command**: `gunicorn app:app` (or automatically read from `Procfile`)
-4. Add your **Environment Variables** in the Render Dashboard:
-   - `MONGO_URI`: `mongodb+srv://t6285665_db_user:Welcome%402026@cluster0.lnmrzjm.mongodb.net/?retryWrites=true&w=majority`
-   - `MONGO_DB_NAME`: `ExpenseERP`
-   - `SECRET_KEY`: `your-random-secret-key`
-   - `PORT`: (Render sets this automatically)
+
 
