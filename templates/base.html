@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}EXPENSE. Enterprise ERP{% endblock %}</title>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}?v=28">
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="{% block body_class %}app-body{% endblock %}">
+
+  {% block content %}{% endblock %}
+
+  <!-- Core Scripts -->
+  <script src="{{ url_for('static', filename='js/api.js') }}?v=28"></script>
+  <script src="{{ url_for('static', filename='js/database.js') }}?v=28"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EXPENSE. Enterprise ERP Login</title>
+  
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/index.css') }}?v=28">
+</head>
+<body class="login-body">
+
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-icon-box">
+          <i class="fa-solid fa-building-columns"></i>
+        </div>
+        <div class="login-logo">EXPENSE<span>.</span> ERP</div>
+        <p class="login-subtitle">Corporate Single Sign-On Portal</p>
+      </div>
+
+      <!-- Security Status Badge -->
+      <div class="erp-security-bar">
+        <i class="fa-solid fa-shield-halved"></i> 256-Bit TLS Encrypted Connection
+      </div>
+
+      <!-- Error Toast -->
+      <div class="login-error" id="login-error-box">
+        <i class="fa-solid fa-circle-exclamation"></i> Invalid email address or security password.
+      </div>
+
+      <!-- Login Form -->
+      <form class="login-form" id="login-form">
+        <div class="form-group">
+          <label class="form-label"><i class="fa-solid fa-envelope"></i> Corporate Email</label>
+          <input type="email" class="form-control" id="login-email" placeholder="name@expense.com" required>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label"><i class="fa-solid fa-lock"></i> Account Password</label>
+          <input type="password" class="form-control" id="login-password" placeholder="••••••••" required>
+        </div>
+
+        <button type="submit" class="login-btn">
+          <i class="fa-solid fa-right-to-bracket"></i> Secure ERP Login
+        </button>
+      </form>
+
+      <div class="login-footer">
+        EXPENSE ERP Suite v4.2 &bull; &copy; 2026 Enterprise Corp
+      </div>
+    </div>
+  </div>
+
+    <script src="{{ url_for('static', filename='js/api.js') }}?v=28"></script>
+  <script src="{{ url_for('static', filename='js/database.js') }}?v=28"></script>
+  <script src="{{ url_for('static', filename='js/login.js') }}?v=28"></script>
+</body>
+</html>
