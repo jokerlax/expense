@@ -68,7 +68,7 @@ function navigateToTab(tabName) {
   });
 
   // Toggle active view panel
-  const sections = ["dashboard", "my-expenses", "add-expense", "expense-reports", "settlements"];
+  const sections = ["dashboard", "my-expenses", "add-expense", "expense-reports", "report-download", "settlements"];
   sections.forEach(s => {
     const panel = document.getElementById(`view-${s}`);
     if (panel) {
@@ -85,6 +85,7 @@ function navigateToTab(tabName) {
     "dashboard": "Employee Dashboard Overview",
     "add-expense": "Submit Expense Claim",
     "expense-reports": "Expense Reports Desk",
+    "report-download": "Report & Attachment Download Desk",
     "my-expenses": "Personal Expense Ledger",
     "settlements": "My Settlements & Reimbursements"
   };
@@ -96,6 +97,8 @@ function navigateToTab(tabName) {
     setupAddExpenseForm();
   } else if (tabName === "expense-reports") {
     initExpenseReportsPage();
+  } else if (tabName === "report-download") {
+    initReportDownloadPage();
   } else if (tabName === "my-expenses") {
     renderMyExpensesTable();
   } else if (tabName === "settlements") {
@@ -2322,4 +2325,1247 @@ function exportEmployeeSettlements(format) {
     link.click();
     showToast("Settlement statement exported as CSV.", "success");
   }
+}
+
+// ==============================================================================
+// 12. REPORT & ATTACHMENT DOWNLOAD DESK CONTROLLERS
+// ==============================================================================
+
+let currentDownloadMode = "month-wise";
+let downloadExpensesList = [];
+let filteredDownloadExpenses = [];
+let selectedDownloadExpenseIds = new Set();
+let selectedDownloadMonths = new Set();
+
+const SEEDED_IMAGE_MAP = {
+  "receipt_flight.jpg": "https://images.unsplash.com/photo-1543269865-cbf427effbad?w=500&auto=format&fit=crop&q=60",
+  "receipt_hotel.jpg": "https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?w=500&auto=format&fit=crop&q=60",
+  "receipt_dinner.jpg": "https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=500&auto=format&fit=crop&q=60",
+  "receipt_stationery.png": "https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=500&auto=format&fit=crop&q=60"
+};
+
+function resolveExpenseReceiptSrc(rawUrl) {
+  if (!rawUrl || rawUrl.trim() === "" || rawUrl === "receipt_attached.png") return null;
+  if (rawUrl.startsWith("http") || rawUrl.startsWith("data:")) return rawUrl;
+  return SEEDED_IMAGE_MAP[rawUrl] || "https://images.unsplash.com/photo-1554415707-6e8cfc93fe23?w=500&auto=format&fit=crop&q=60";
+}
+
+function formatStatusLabel(st) {
+  if (!st) return "Unreported";
+  const map = {
+    "DRAFT": "Draft",
+    "SUBMITTED": "Submitted",
+    "PENDING_MANAGER": "Pending Manager",
+    "PENDING_FINANCE": "Pending Finance",
+    "APPROVED": "Approved",
+    "REJECTED": "Rejected",
+    "PAID": "Paid",
+    "SETTLED": "Settled",
+    "UNREPORTED": "Unreported",
+    "FINANCE_APPROVED": "Finance Verified",
+    "CLARIFICATION_REQUIRED": "Clarification Req."
+  };
+  return map[st] || String(st).replace(/_/g, " ");
+}
+
+function initReportDownloadPage() {
+  if (!currentUser) return;
+
+  function loadAndRenderData() {
+    const allExp = (expenseDb && expenseDb.getExpenses) ? expenseDb.getExpenses() : ((expenseDb && expenseDb.getTable("expenses")) || []);
+    const myEmpId = (currentUser.employeeId || currentUser.id || "").toLowerCase();
+    const myName = (currentUser.name || "").toLowerCase();
+
+    downloadExpensesList = allExp.filter(e => {
+      const eId = (e.employeeId || "").toLowerCase();
+      const eName = (e.employeeName || "").toLowerCase();
+      return (myEmpId && eId === myEmpId) || (myName && eName === myName);
+    });
+    downloadExpensesList.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+    // Reset selections
+    selectedDownloadExpenseIds.clear();
+    selectedDownloadMonths.clear();
+
+    // Populate month dropdown options
+    populateDownloadMonthFilter();
+    
+    // Populate category dropdown options
+    populateDownloadCategoryFilter();
+
+    // Initial renders
+    renderMonthWiseDownload();
+    filterExpenseDownload();
+
+    // Highlight active mode
+    switchDownloadMode(currentDownloadMode);
+  }
+
+  loadAndRenderData();
+
+  // If DB bridge is still connecting or syncing
+  if (expenseDb && typeof expenseDb.onReady === "function") {
+    expenseDb.onReady(() => {
+      loadAndRenderData();
+    });
+  }
+
+  // Always sync fresh claims directly from MongoDB to avoid stale local cache
+  if (typeof fetch === "function") {
+    fetch("/api/data/expenses")
+      .then(res => res.json())
+      .then(exps => {
+        if (Array.isArray(exps) && exps.length > 0) {
+          if (expenseDb && expenseDb.cache) {
+            expenseDb.cache["expenses"] = exps;
+            try {
+              localStorage.setItem(expenseDb.key, JSON.stringify(expenseDb.cache));
+            } catch (le) {}
+          }
+          loadAndRenderData();
+        }
+      })
+      .catch(err => console.warn("[Report Download] live expenses sync notice:", err));
+  }
+}
+
+function populateDownloadMonthFilter() {
+  const monthSelect = document.getElementById("dl-exp-filter-month");
+  if (!monthSelect) return;
+
+  const monthSet = new Set();
+  downloadExpensesList.forEach(e => {
+    if (e.date) {
+      const ym = e.date.substring(0, 7);
+      if (/^\d{4}-\d{2}$/.test(ym)) monthSet.add(ym);
+    }
+  });
+
+  const sortedMonths = Array.from(monthSet).sort().reverse();
+  let html = `<option value="ALL">All Months (${sortedMonths.length})</option>`;
+  sortedMonths.forEach(ym => {
+    const [y, m] = ym.split('-');
+    const dateObj = new Date(parseInt(y), parseInt(m) - 1, 1);
+    const label = dateObj.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    html += `<option value="${ym}">${label}</option>`;
+  });
+  monthSelect.innerHTML = html;
+}
+
+function populateDownloadCategoryFilter() {
+  const catSelect = document.getElementById("dl-exp-filter-category");
+  if (!catSelect) return;
+
+  const categories = expenseDb.getExpenseCategories ? expenseDb.getExpenseCategories() : [];
+  let html = `<option value="ALL">All Categories</option>`;
+  if (categories && categories.length > 0) {
+    categories.forEach(c => {
+      html += `<option value="${c.name}">${c.name}</option>`;
+    });
+  } else {
+    const catSet = new Set(downloadExpensesList.map(e => e.category).filter(Boolean));
+    catSet.forEach(c => {
+      html += `<option value="${c}">${c}</option>`;
+    });
+  }
+  catSelect.innerHTML = html;
+}
+
+function switchDownloadMode(mode) {
+  currentDownloadMode = mode;
+  const monthSection = document.getElementById("section-download-month-wise");
+  const expSection = document.getElementById("section-download-expense-wise");
+  const btnMonth = document.getElementById("btn-mode-month");
+  const btnExp = document.getElementById("btn-mode-expense");
+
+  if (mode === "month-wise") {
+    if (monthSection) monthSection.style.display = "block";
+    if (expSection) expSection.style.display = "none";
+    if (btnMonth) { btnMonth.className = "btn btn-primary btn-sm"; }
+    if (btnExp) { btnExp.className = "btn btn-secondary btn-sm"; }
+  } else {
+    if (monthSection) monthSection.style.display = "none";
+    if (expSection) expSection.style.display = "block";
+    if (btnMonth) { btnMonth.className = "btn btn-secondary btn-sm"; }
+    if (btnExp) { btnExp.className = "btn btn-primary btn-sm"; }
+  }
+  updateDownloadKPIs();
+}
+
+function renderMonthWiseDownload() {
+  const tbody = document.getElementById("month-download-table-body");
+  if (!tbody) return;
+
+  const monthMap = {};
+  downloadExpensesList.forEach(e => {
+    const ym = e.date ? e.date.substring(0, 7) : "Unknown";
+    if (!monthMap[ym]) {
+      monthMap[ym] = {
+        key: ym,
+        expenses: [],
+        totalAmount: 0,
+        currency: e.currency || "IDR",
+        receiptCount: 0,
+        statusCounts: {}
+      };
+    }
+    monthMap[ym].expenses.push(e);
+    monthMap[ym].totalAmount += parseFloat(e.amount) || 0;
+    if (resolveExpenseReceiptSrc(e.receiptUrl)) {
+      monthMap[ym].receiptCount++;
+    }
+    const st = e.status || "UNREPORTED";
+    monthMap[ym].statusCounts[st] = (monthMap[ym].statusCounts[st] || 0) + 1;
+  });
+
+  const sortedMonthKeys = Object.keys(monthMap).sort().reverse();
+
+  if (sortedMonthKeys.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="7" style="text-align: center; padding: 30px; color: var(--text-muted);">
+          <i class="fa-solid fa-folder-open mb-2" style="font-size: 24px; opacity: 0.5;"></i>
+          <p style="margin: 0; font-size: 13px;">No expense records available for download.</p>
+        </td>
+      </tr>
+    `;
+    return;
+  }
+
+  let html = "";
+  sortedMonthKeys.forEach(ym => {
+    const mData = monthMap[ym];
+    let monthTitle = ym;
+    if (/^\d{4}-\d{2}$/.test(ym)) {
+      const [y, m] = ym.split('-');
+      const d = new Date(parseInt(y), parseInt(m) - 1, 1);
+      monthTitle = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    }
+
+    const isChecked = selectedDownloadMonths.has(ym);
+
+    const statusBadges = Object.keys(mData.statusCounts).map(st => {
+      const count = mData.statusCounts[st];
+      let cls = "unreported";
+      if (st.includes("APPROVED") || st === "PAID" || st === "SETTLED") cls = "approved";
+      else if (st.includes("PENDING")) cls = "pending";
+      else if (st.includes("REJECTED")) cls = "rejected";
+      return `<span class="status-badge ${cls}" style="font-size: 10px; margin-right: 4px; padding: 2px 6px;">${count} ${formatStatusLabel(st)}</span>`;
+    }).join("");
+
+    html += `
+      <tr>
+        <td style="text-align: center;">
+          <input type="checkbox" class="chk-month-row" data-month="${ym}" ${isChecked ? 'checked' : ''} onchange="handleMonthCheckboxChange(this)">
+        </td>
+        <td>
+          <div style="font-weight: 700; font-size: 13px; color: var(--text-main);">${monthTitle}</div>
+          <div style="font-size: 10.5px; color: var(--text-muted);">${ym}</div>
+        </td>
+        <td>
+          <span style="font-weight: 600;">${mData.expenses.length} claims</span>
+        </td>
+        <td>
+          <span style="font-weight: 700; color: var(--text-main); font-size: 12.5px;">${formatAmount(mData.totalAmount, mData.currency)}</span>
+        </td>
+        <td>
+          <div class="d-flex flex-wrap gap-1 align-center">${statusBadges}</div>
+        </td>
+        <td>
+          ${mData.receiptCount > 0 
+            ? `<span class="status-badge approved" style="font-size: 11px;"><i class="fa-solid fa-paperclip"></i> ${mData.receiptCount} receipts</span>`
+            : `<span style="font-size: 11px; color: var(--text-muted);"><i class="fa-solid fa-minus"></i> None</span>`
+          }
+        </td>
+        <td style="text-align: right;">
+          <div class="d-flex justify-end gap-1 flex-wrap">
+            <button class="btn btn-secondary btn-xs" onclick="viewMonthInExpenseMode('${ym}')" title="Filter this month in itemized list">
+              <i class="fa-solid fa-list"></i> View Claims
+            </button>
+            <button class="btn btn-danger btn-xs" onclick="downloadSingleMonthPDF('${ym}')" title="Download Month PDF Report with embedded receipts">
+              <i class="fa-solid fa-file-pdf"></i> PDF
+            </button>
+            <button class="btn btn-secondary btn-xs" onclick="downloadSingleMonthExcel('${ym}')" title="Download Excel for this month">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Excel
+            </button>
+            <button class="btn btn-primary btn-xs" onclick="downloadSingleMonthPackage('${ym}')" title="Download Complete Package (PDF + Receipts ZIP)">
+              <i class="fa-solid fa-download"></i> Package (.zip)
+            </button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+  updateMonthBatchBar();
+}
+
+function handleMonthCheckboxChange(chk) {
+  const ym = chk.getAttribute("data-month");
+  if (chk.checked) {
+    selectedDownloadMonths.add(ym);
+  } else {
+    selectedDownloadMonths.delete(ym);
+  }
+  updateMonthBatchBar();
+  updateDownloadKPIs();
+}
+
+function toggleSelectAllMonths(masterChk) {
+  const chks = document.querySelectorAll(".chk-month-row");
+  chks.forEach(c => {
+    c.checked = masterChk.checked;
+    const ym = c.getAttribute("data-month");
+    if (masterChk.checked) selectedDownloadMonths.add(ym);
+    else selectedDownloadMonths.delete(ym);
+  });
+  updateMonthBatchBar();
+  updateDownloadKPIs();
+}
+
+function updateMonthBatchBar() {
+  const bar = document.getElementById("month-batch-bar");
+  const label = document.getElementById("month-batch-count-label");
+  const master = document.getElementById("chk-master-months");
+  if (!bar) return;
+
+  const count = selectedDownloadMonths.size;
+  if (count > 0) {
+    bar.style.display = "flex";
+    if (label) label.innerText = `${count} month${count > 1 ? 's' : ''} selected for batch download`;
+  } else {
+    bar.style.display = "none";
+  }
+
+  const allChks = document.querySelectorAll(".chk-month-row");
+  if (master && allChks.length > 0) {
+    master.checked = count === allChks.length;
+    master.indeterminate = count > 0 && count < allChks.length;
+  }
+}
+
+function viewMonthInExpenseMode(ym) {
+  switchDownloadMode("expense-wise");
+  const mSelect = document.getElementById("dl-exp-filter-month");
+  if (mSelect) {
+    mSelect.value = ym;
+    filterExpenseDownload();
+  }
+}
+
+function filterExpenseDownload() {
+  const search = (document.getElementById("dl-exp-search")?.value || "").toLowerCase().trim();
+  const month = document.getElementById("dl-exp-filter-month")?.value || "ALL";
+  const cat = document.getElementById("dl-exp-filter-category")?.value || "ALL";
+  const status = document.getElementById("dl-exp-filter-status")?.value || "ALL";
+  const receipt = document.getElementById("dl-exp-filter-receipt")?.value || "ALL";
+  const dFrom = document.getElementById("dl-exp-date-from")?.value;
+  const dTo = document.getElementById("dl-exp-date-to")?.value;
+
+  filteredDownloadExpenses = downloadExpensesList.filter(e => {
+    if (search) {
+      const match = (e.id || "").toLowerCase().includes(search) ||
+                    (e.description || "").toLowerCase().includes(search) ||
+                    (e.project || "").toLowerCase().includes(search) ||
+                    (e.category || "").toLowerCase().includes(search) ||
+                    (e.type || "").toLowerCase().includes(search) ||
+                    (String(e.amount) || "").includes(search);
+      if (!match) return false;
+    }
+
+    if (month !== "ALL") {
+      const ym = e.date ? e.date.substring(0, 7) : "";
+      if (ym !== month) return false;
+    }
+
+    if (cat !== "ALL" && e.category !== cat) return false;
+
+    if (status !== "ALL") {
+      const st = (e.status || "UNREPORTED").toUpperCase();
+      if (status === "PENDING") {
+        if (!st.includes("PENDING") && st !== "SUBMITTED") return false;
+      } else if (status === "APPROVED") {
+        if (!st.includes("APPROVED") && st !== "PAID" && st !== "SETTLED") return false;
+      } else if (status === "PAID") {
+        if (st !== "PAID" && st !== "SETTLED") return false;
+      } else if (status === "FINANCE_APPROVED") {
+        if (!st.includes("FINANCE") && !st.includes("APPROVED") && st !== "PAID" && st !== "SETTLED") return false;
+      } else if (status === "UNREPORTED") {
+        if (st !== "UNREPORTED" && st !== "DRAFT") return false;
+      } else if (st !== status) {
+        return false;
+      }
+    }
+
+    const hasReceipt = Boolean(resolveExpenseReceiptSrc(e.receiptUrl));
+    if (receipt === "HAS_RECEIPT" && !hasReceipt) return false;
+    if (receipt === "NO_RECEIPT" && hasReceipt) return false;
+
+    if (dFrom && e.date && e.date < dFrom) return false;
+    if (dTo && e.date && e.date > dTo) return false;
+
+    return true;
+  });
+
+  renderExpenseWiseDownloadTable();
+  updateDownloadKPIs();
+}
+
+function resetExpenseDownloadFilters() {
+  if (document.getElementById("dl-exp-search")) document.getElementById("dl-exp-search").value = "";
+  if (document.getElementById("dl-exp-filter-month")) document.getElementById("dl-exp-filter-month").value = "ALL";
+  if (document.getElementById("dl-exp-filter-category")) document.getElementById("dl-exp-filter-category").value = "ALL";
+  if (document.getElementById("dl-exp-filter-status")) document.getElementById("dl-exp-filter-status").value = "ALL";
+  if (document.getElementById("dl-exp-filter-receipt")) document.getElementById("dl-exp-filter-receipt").value = "ALL";
+  if (document.getElementById("dl-exp-date-from")) document.getElementById("dl-exp-date-from").value = "";
+  if (document.getElementById("dl-exp-date-to")) document.getElementById("dl-exp-date-to").value = "";
+  filterExpenseDownload();
+}
+
+function setQuickDateRange(range) {
+  const now = new Date();
+  const fromInput = document.getElementById("dl-exp-date-from");
+  const toInput = document.getElementById("dl-exp-date-to");
+  if (!fromInput || !toInput) return;
+
+  if (range === "this-month") {
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    fromInput.value = `${y}-${m}-01`;
+    toInput.value = now.toISOString().split('T')[0];
+  } else if (range === "last-month") {
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth(), 0);
+    const y = prev.getFullYear();
+    const m = String(prev.getMonth() + 1).padStart(2, '0');
+    fromInput.value = `${y}-${m}-01`;
+    toInput.value = lastDay.toISOString().split('T')[0];
+  } else if (range === "this-year") {
+    const y = now.getFullYear();
+    fromInput.value = `${y}-01-01`;
+    toInput.value = now.toISOString().split('T')[0];
+  } else if (range === "all") {
+    fromInput.value = "";
+    toInput.value = "";
+  }
+  filterExpenseDownload();
+}
+
+function renderExpenseWiseDownloadTable() {
+  const tbody = document.getElementById("expense-download-table-body");
+  if (!tbody) return;
+
+  if (filteredDownloadExpenses.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; padding: 30px; color: var(--text-muted);">
+          <i class="fa-solid fa-filter-circle-xmark mb-2" style="font-size: 24px; opacity: 0.5;"></i>
+          <p style="margin: 0; font-size: 13px;">No expense claims match the selected criteria.</p>
+        </td>
+      </tr>
+    `;
+    updateExpenseBatchBar();
+    return;
+  }
+
+  let html = "";
+  filteredDownloadExpenses.forEach(exp => {
+    const isChecked = selectedDownloadExpenseIds.has(exp.id);
+    const receiptSrc = resolveExpenseReceiptSrc(exp.receiptUrl);
+
+    let statusCls = "unreported";
+    const st = exp.status || "UNREPORTED";
+    if (st.includes("APPROVED") || st === "PAID" || st === "SETTLED") statusCls = "approved";
+    else if (st.includes("PENDING")) statusCls = "pending";
+    else if (st.includes("REJECTED")) statusCls = "rejected";
+
+    const safeExpJson = JSON.stringify(exp).replace(/"/g, "&quot;");
+
+    html += `
+      <tr>
+        <td style="text-align: center;">
+          <input type="checkbox" class="chk-exp-row" data-id="${exp.id}" ${isChecked ? 'checked' : ''} onchange="handleExpenseRowCheckboxChange(this)">
+        </td>
+        <td style="white-space: nowrap;">
+          <div style="font-weight: 600; font-size: 12px;">${formatDate(exp.date)}</div>
+          <div style="font-size: 10px; color: var(--text-muted);">${exp.dateCreated ? formatDate(exp.dateCreated) : ''}</div>
+        </td>
+        <td>
+          <span style="font-family: monospace; font-weight: 700; color: #4f46e5; font-size: 12px;">${exp.id}</span>
+        </td>
+        <td>
+          <div style="font-weight: 600; font-size: 12px;">${exp.category || 'General'}</div>
+          <div style="font-size: 11px; color: var(--text-muted);">${exp.type || '-'}</div>
+        </td>
+        <td>
+          <div style="font-size: 12px; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${exp.description || ''}">
+            ${exp.description || 'No description'}
+          </div>
+          <div style="font-size: 10.5px; color: var(--text-muted);">
+            <i class="fa-solid fa-briefcase"></i> ${exp.project || 'General'}
+          </div>
+        </td>
+        <td style="white-space: nowrap;">
+          <span style="font-weight: 700; color: var(--text-main); font-size: 12.5px;">${formatAmount(exp.amount, exp.currency)}</span>
+        </td>
+        <td>
+          <span class="status-badge ${statusCls}">${formatStatusLabel(st)}</span>
+        </td>
+        <td style="text-align: center;">
+          ${receiptSrc 
+            ? `<button type="button" class="btn btn-outline btn-xs" onclick='previewReceiptModal(${safeExpJson})' title="Preview attachment" style="padding: 3px 8px; border-radius: 4px;">
+                 <i class="fa-solid fa-paperclip" style="color: #6366f1;"></i> View
+               </button>`
+            : `<span style="font-size: 11px; color: var(--text-muted);">-</span>`
+          }
+        </td>
+        <td style="text-align: right; white-space: nowrap;">
+          <div class="d-flex justify-end gap-1">
+            <button type="button" class="btn btn-danger btn-xs" onclick="downloadSingleExpensePDF('${exp.id}')" title="Download Official PDF Claim Voucher with Receipt">
+              <i class="fa-solid fa-file-pdf"></i> PDF
+            </button>
+            <button type="button" class="btn btn-secondary btn-xs" onclick="downloadSingleExpenseExcel('${exp.id}')" title="Download Excel for this claim">
+              <i class="fa-solid fa-file-excel" style="color: #10b981;"></i>
+            </button>
+            ${receiptSrc 
+              ? `<button type="button" class="btn btn-primary btn-xs" onclick='downloadSingleExpenseReceipt(${safeExpJson})' title="Download attached receipt">
+                   <i class="fa-solid fa-download"></i> Receipt
+                 </button>`
+              : `<button type="button" class="btn btn-secondary btn-xs" disabled style="opacity: 0.4;">
+                   <i class="fa-solid fa-download"></i>
+                 </button>`
+            }
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+  updateExpenseBatchBar();
+}
+
+function handleExpenseRowCheckboxChange(chk) {
+  const id = chk.getAttribute("data-id");
+  if (chk.checked) {
+    selectedDownloadExpenseIds.add(id);
+  } else {
+    selectedDownloadExpenseIds.delete(id);
+  }
+  updateExpenseBatchBar();
+  updateDownloadKPIs();
+}
+
+function toggleSelectAllDownloadExpenses(masterChk) {
+  const chks = document.querySelectorAll(".chk-exp-row");
+  chks.forEach(c => {
+    c.checked = masterChk.checked;
+    const id = c.getAttribute("data-id");
+    if (masterChk.checked) selectedDownloadExpenseIds.add(id);
+    else selectedDownloadExpenseIds.delete(id);
+  });
+  updateExpenseBatchBar();
+  updateDownloadKPIs();
+}
+
+function updateExpenseBatchBar() {
+  const bar = document.getElementById("expense-batch-bar");
+  const badge = document.getElementById("batch-selected-badge");
+  const detail = document.getElementById("batch-selected-detail");
+  const master = document.getElementById("chk-master-expenses");
+  if (!bar) return;
+
+  const count = selectedDownloadExpenseIds.size;
+  if (count > 0) {
+    bar.style.display = "flex";
+    if (badge) badge.innerText = `${count} Selected`;
+
+    const selectedExps = downloadExpensesList.filter(e => selectedDownloadExpenseIds.has(e.id));
+    const totalAmt = selectedExps.reduce((acc, cur) => acc + (parseFloat(cur.amount) || 0), 0);
+    const receiptCount = selectedExps.filter(e => resolveExpenseReceiptSrc(e.receiptUrl)).length;
+    const curr = selectedExps[0]?.currency || "IDR";
+
+    if (detail) {
+      detail.innerText = `Total: ${formatAmount(totalAmt, curr)} | ${receiptCount} Receipt${receiptCount === 1 ? '' : 's'} available`;
+    }
+  } else {
+    bar.style.display = "none";
+  }
+
+  const allChks = document.querySelectorAll(".chk-exp-row");
+  if (master && allChks.length > 0) {
+    master.checked = count === allChks.length;
+    master.indeterminate = count > 0 && count < allChks.length;
+  }
+}
+
+function updateDownloadKPIs() {
+  const totalClaimsEl = document.getElementById("dl-kpi-total-claims");
+  const totalAmountEl = document.getElementById("dl-kpi-total-amount");
+  const selectedCountEl = document.getElementById("dl-kpi-selected-count");
+  const selectedAmountEl = document.getElementById("dl-kpi-selected-amount");
+  const receiptsCountEl = document.getElementById("dl-kpi-receipts-count");
+
+  const exps = currentDownloadMode === "month-wise" ? downloadExpensesList : filteredDownloadExpenses;
+  const totalClaims = exps.length;
+  const totalAmount = exps.reduce((acc, c) => acc + (parseFloat(c.amount) || 0), 0);
+  const totalReceipts = exps.filter(e => resolveExpenseReceiptSrc(e.receiptUrl)).length;
+  const mainCurr = exps[0]?.currency || "IDR";
+
+  if (totalClaimsEl) totalClaimsEl.innerText = totalClaims;
+  if (totalAmountEl) totalAmountEl.innerText = formatAmount(totalAmount, mainCurr);
+  if (receiptsCountEl) receiptsCountEl.innerText = `${totalReceipts} Attachments`;
+
+  if (currentDownloadMode === "month-wise") {
+    const selectedMonthsCount = selectedDownloadMonths.size;
+    const selectedExps = downloadExpensesList.filter(e => e.date && selectedDownloadMonths.has(e.date.substring(0, 7)));
+    const selAmt = selectedExps.reduce((acc, c) => acc + (parseFloat(c.amount) || 0), 0);
+    if (selectedCountEl) selectedCountEl.innerText = `${selectedMonthsCount} Months`;
+    if (selectedAmountEl) selectedAmountEl.innerText = `${formatAmount(selAmt, mainCurr)} (${selectedExps.length} claims)`;
+  } else {
+    const selCount = selectedDownloadExpenseIds.size;
+    const selectedExps = downloadExpensesList.filter(e => selectedDownloadExpenseIds.has(e.id));
+    const selAmt = selectedExps.reduce((acc, c) => acc + (parseFloat(c.amount) || 0), 0);
+    if (selectedCountEl) selectedCountEl.innerText = `${selCount} Claims`;
+    if (selectedAmountEl) selectedAmountEl.innerText = `${formatAmount(selAmt, mainCurr)} selected`;
+  }
+}
+
+// ------------------------------------------------------------------------------
+// EXCEL GENERATION UTILITIES
+// ------------------------------------------------------------------------------
+
+function buildExpensesExcelWorkbook(expenses, title = "Expense Report") {
+  if (typeof XLSX === "undefined") {
+    showToast("SheetJS (XLSX) library not loaded.", "error");
+    return null;
+  }
+
+  const rows = expenses.map(e => ({
+    "Expense ID": e.id || "",
+    "Date": e.date || "",
+    "Employee ID": e.employeeId || "",
+    "Employee Name": e.employeeName || currentUser.name || "",
+    "Category": e.category || "",
+    "Type / Sub-Category": e.type || "",
+    "Description": e.description || "",
+    "Project": e.project || "",
+    "Country": e.country || "",
+    "Amount": parseFloat(e.amount) || 0,
+    "Currency": e.currency || "IDR",
+    "Payment Method": e.paymentMethod || "",
+    "Status": formatStatusLabel(e.status || "UNREPORTED"),
+    "Report ID": e.reportId || "",
+    "Has Attachment": resolveExpenseReceiptSrc(e.receiptUrl) ? "Yes" : "No",
+    "Receipt Reference": e.receiptUrl || "",
+    "Date Created": e.dateCreated || "",
+    "Remarks": e.remarks || ""
+  }));
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+
+  worksheet["!cols"] = [
+    { wch: 16 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 32 },
+    { wch: 14 },
+    { wch: 10 },
+    { wch: 14 },
+    { wch: 10 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 30 },
+    { wch: 16 },
+    { wch: 24 }
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, title.substring(0, 31));
+  return workbook;
+}
+
+function exportExpensesToExcelFile(expenses, filename = "Expense_Report.xlsx") {
+  const wb = buildExpensesExcelWorkbook(expenses, "Expenses");
+  if (!wb) return;
+  XLSX.writeFile(wb, filename);
+  showToast(`Excel spreadsheet exported: ${filename}`, "success");
+}
+
+// ------------------------------------------------------------------------------
+// RECEIPT ATTACHMENT & ZIP GENERATION UTILITIES
+// ------------------------------------------------------------------------------
+
+async function fetchAttachmentBinary(rawUrl, fallbackFilename) {
+  const resolved = resolveExpenseReceiptSrc(rawUrl);
+  if (!resolved) return null;
+
+  try {
+    if (resolved.startsWith("data:")) {
+      const parts = resolved.split(",");
+      const mime = parts[0].match(/:(.*?);/)?.[1] || "image/jpeg";
+      const b64 = parts[1];
+      const binaryString = atob(b64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      let ext = ".jpg";
+      if (mime.includes("png")) ext = ".png";
+      else if (mime.includes("pdf")) ext = ".pdf";
+      else if (mime.includes("gif")) ext = ".gif";
+
+      const name = fallbackFilename.includes(".") ? fallbackFilename : `${fallbackFilename}${ext}`;
+      return { filename: name, data: bytes };
+    }
+
+    const response = await fetch(resolved);
+    if (!response.ok) throw new Error("HTTP error " + response.status);
+    const arrayBuffer = await response.arrayBuffer();
+    
+    let ext = ".jpg";
+    const cleanUrl = resolved.split("?")[0];
+    const match = cleanUrl.match(/\.(jpg|jpeg|png|gif|pdf|webp)$/i);
+    if (match) ext = match[0].toLowerCase();
+
+    const name = fallbackFilename.includes(".") ? fallbackFilename : `${fallbackFilename}${ext}`;
+    return { filename: name, data: arrayBuffer };
+  } catch (err) {
+    console.warn("[Attachment Fetch Warning] Could not fetch receipt directly:", rawUrl, err);
+    const textNote = `Receipt Image Reference:\nExpense ID: ${fallbackFilename}\nOriginal URL: ${resolved}\nStatus: Could not be fetched directly via CORS browser security.\nOpen in browser: ${resolved}\n`;
+    return { filename: `${fallbackFilename}_receipt_url.txt`, data: textNote };
+  }
+}
+
+async function createPackageZip(expenses, options = { includeExcel: true, includePDF: true, includeReceipts: true, zipFilename: "Expense_Package.zip" }) {
+  if (typeof JSZip === "undefined") {
+    showToast("JSZip library not available.", "error");
+    return;
+  }
+
+  showToast("Preparing download package...", "info");
+  const zip = new JSZip();
+
+  // 1. Include PDF Report if requested
+  if (options.includePDF !== false && window.jspdf && typeof window.jspdf.jsPDF === "function") {
+    try {
+      const pdfDoc = await buildExpensesPDFDoc(expenses, {
+        title: "Official Expense Claims Report",
+        scopeLabel: `Package Export (${expenses.length} claims)`,
+        includeReceiptPages: false // receipts are placed in attachments/ folder
+      });
+      if (pdfDoc) {
+        const pdfArrayBuffer = pdfDoc.output("arraybuffer");
+        zip.file("Expenses_Report.pdf", pdfArrayBuffer);
+      }
+    } catch (pe) {
+      console.warn("Could not generate PDF for ZIP package:", pe);
+    }
+  }
+
+  // 2. Include Excel Summary
+  if (options.includeExcel) {
+    const wb = buildExpensesExcelWorkbook(expenses, "Expenses");
+    if (wb) {
+      const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
+      zip.file("Expenses_Summary.xlsx", excelBuffer);
+    }
+  }
+
+  // 3. Include Receipts Folder
+  if (options.includeReceipts) {
+    const receiptFolder = zip.folder("attachments");
+    const receiptExpenses = expenses.filter(e => resolveExpenseReceiptSrc(e.receiptUrl));
+
+    if (receiptExpenses.length > 0) {
+      for (let i = 0; i < receiptExpenses.length; i++) {
+        const exp = receiptExpenses[i];
+        const baseName = `Receipt_${exp.id}_${(exp.category || "Expense").replace(/\s+/g, "_")}`;
+        const att = await fetchAttachmentBinary(exp.receiptUrl, baseName);
+        if (att) {
+          receiptFolder.file(att.filename, att.data, { binary: true });
+        }
+      }
+    }
+  }
+
+  try {
+    const zipBlob = await zip.generateAsync({ type: "blob" });
+    const blobUrl = URL.createObjectURL(zipBlob);
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = options.zipFilename || "Expense_Package.zip";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(blobUrl);
+    showToast(`Download complete: ${options.zipFilename}`, "success");
+  } catch (err) {
+    console.error("[ZIP Generation Error]:", err);
+    showToast("Failed to generate ZIP archive.", "error");
+  }
+}
+
+// ------------------------------------------------------------------------------
+// PDF GENERATION ENGINE
+// ------------------------------------------------------------------------------
+
+function getImageDataUrl(src) {
+  return new Promise((resolve) => {
+    if (!src) return resolve(null);
+    if (src.startsWith("data:image/")) return resolve(src);
+
+    const img = new Image();
+    img.crossOrigin = "Anonymous";
+    img.onload = function() {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth || img.width;
+        canvas.height = img.naturalHeight || img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        resolve(canvas.toDataURL("image/jpeg", 0.88));
+      } catch (err) {
+        tryFetchBlob();
+      }
+    };
+    img.onerror = function() {
+      tryFetchBlob();
+    };
+
+    function tryFetchBlob() {
+      fetch(src)
+        .then(r => r.blob())
+        .then(blob => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        })
+        .catch(() => resolve(null));
+    }
+
+    img.src = src;
+  });
+}
+
+async function buildExpensesPDFDoc(expenses, options = {}) {
+  if (!window.jspdf || typeof window.jspdf.jsPDF !== "function") {
+    showToast("jsPDF library not available.", "error");
+    return null;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const today = new Date().toISOString().split("T")[0];
+  const userCurrency = (typeof getUserCurrency === 'function' ? getUserCurrency() : (currentUser.currency || "IDR"));
+
+  // Primary Header Bar
+  doc.setFillColor(79, 70, 229);
+  doc.rect(0, 0, pageWidth, 22, "F");
+
+  // Title Text
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(13.5);
+  doc.setFont("helvetica", "bold");
+  doc.text(options.title || "EXPENSE ERP - EXPENSE CLAIMS REPORT", 14, 11);
+
+  doc.setFontSize(8.5);
+  doc.setFont("helvetica", "normal");
+  doc.text(`Generated: ${today} | User: ${currentUser.name || 'Employee'} (${currentUser.employeeId || '-'})`, 14, 17.5);
+
+  // Top right total badge
+  const totalAmount = expenses.reduce((acc, cur) => acc + (parseFloat(cur.amount) || 0), 0);
+  const receiptsCount = expenses.filter(e => resolveExpenseReceiptSrc(e.receiptUrl)).length;
+  doc.setFont("helvetica", "bold");
+  doc.text(`Total: ${formatAmount(totalAmount, userCurrency)} (${expenses.length} claims, ${receiptsCount} receipts)`, pageWidth - 14, 13.5, { align: "right" });
+
+  // Summary Metrics Card
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, 26, pageWidth - 28, 12, 2, 2, "FD");
+
+  doc.setTextColor(71, 85, 105);
+  doc.setFontSize(8);
+  doc.setFont("helvetica", "normal");
+  const metaText = `Scope: ${options.scopeLabel || 'Expense Download'}   |   Department: ${currentUser.department || 'Operations'}   |   Currency: ${userCurrency}   |   Total Value: ${formatAmount(totalAmount, userCurrency)}   |   Claims: ${expenses.length}`;
+  doc.text(metaText, 18, 33.5);
+
+  // Table Data
+  const headers = ["Date", "Expense ID", "Category", "Description", "Project", "Payment", "Status", "Amount", "Receipt"];
+  const rows = expenses.map(e => [
+    e.date || "",
+    e.id || "",
+    e.category || "General",
+    (e.description || "-").substring(0, 36),
+    e.project || "General",
+    e.paymentMethod || "Corporate",
+    (typeof formatStatusLabel === "function" ? formatStatusLabel(e.status || "UNREPORTED") : (e.status || "UNREPORTED")).replace(/_/g, " "),
+    formatAmount(e.amount, e.currency || userCurrency),
+    resolveExpenseReceiptSrc(e.receiptUrl) ? "Attached" : "None"
+  ]);
+
+  doc.autoTable({
+    startY: 42,
+    head: [headers],
+    body: rows,
+    foot: [["Total", "", "", "", "", "", `${expenses.length} Claims`, formatAmount(totalAmount, userCurrency), `${receiptsCount} Receipts`]],
+    theme: "grid",
+    headStyles: { fillColor: [67, 56, 202], textColor: [255, 255, 255], fontStyle: "bold", fontSize: 8 },
+    bodyStyles: { fontSize: 7.5, textColor: [30, 41, 59] },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    footStyles: { fillColor: [241, 245, 249], textColor: [15, 23, 42], fontStyle: "bold", fontSize: 8 },
+    margin: { top: 42, left: 14, right: 14, bottom: 14 }
+  });
+
+  // Embed Receipts as Subsequent Pages if requested
+  if (options.includeReceiptPages !== false) {
+    const receiptExpenses = expenses.filter(e => resolveExpenseReceiptSrc(e.receiptUrl));
+    for (let i = 0; i < receiptExpenses.length; i++) {
+      const exp = receiptExpenses[i];
+      const receiptSrc = resolveExpenseReceiptSrc(exp.receiptUrl);
+      if (!receiptSrc) continue;
+
+      doc.addPage("a4", "portrait");
+      const portWidth = doc.internal.pageSize.getWidth();
+      const portHeight = doc.internal.pageSize.getHeight();
+
+      // Top Banner
+      doc.setFillColor(79, 70, 229);
+      doc.rect(0, 0, portWidth, 20, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Receipt Attachment - ${exp.id} (${exp.category || 'Expense'})`, 14, 13);
+      doc.setFontSize(8);
+      doc.text(`Attachment ${i + 1} of ${receiptExpenses.length}`, portWidth - 14, 13, { align: "right" });
+
+      // Expense Metadata Box
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(14, 25, portWidth - 28, 20, 2, 2, "FD");
+
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Claim: ${exp.id}   |   Amount: ${formatAmount(exp.amount, exp.currency || userCurrency)}   |   Date: ${exp.date}`, 18, 31.5);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Description: ${exp.description || '-'}   |   Project: ${exp.project || '-'}   |   Status: ${exp.status}`, 18, 37.5);
+      doc.text(`Payment: ${exp.paymentMethod || 'Corporate'}   |   Employee: ${exp.employeeName || currentUser.name} (${exp.employeeId || currentUser.employeeId})`, 18, 42.5);
+
+      // Fetch image data URL and render
+      try {
+        const imgData = await getImageDataUrl(receiptSrc);
+        if (imgData) {
+          let fmt = "JPEG";
+          if (imgData.startsWith("data:image/png")) fmt = "PNG";
+          
+          let renderW = portWidth - 28;
+          let renderH = 150;
+          let renderX = 14;
+          try {
+            const imgProps = doc.getImageProperties(imgData);
+            const imgAspect = (imgProps && imgProps.width && imgProps.height) ? (imgProps.width / imgProps.height) : 1.33;
+            renderW = portWidth - 28;
+            renderH = renderW / imgAspect;
+            if (renderH > portHeight - 65) {
+              renderH = portHeight - 65;
+              renderW = renderH * imgAspect;
+            }
+            renderX = 14 + ((portWidth - 28) - renderW) / 2;
+          } catch (pe) {}
+          
+          doc.addImage(imgData, fmt, renderX, 50, renderW, renderH, undefined, "FAST");
+        } else {
+          doc.setFillColor(241, 245, 249);
+          doc.rect(14, 50, portWidth - 28, 60, "F");
+          doc.setTextColor(100, 116, 139);
+          doc.setFontSize(9);
+          doc.text(`Receipt Reference: ${exp.receiptUrl}`, 20, 75);
+          doc.text(`(Image reference attached in original claim records)`, 20, 85);
+        }
+      } catch (imgErr) {
+        console.warn("Could not embed image into PDF:", imgErr);
+      }
+    }
+  }
+
+  return doc;
+}
+
+// ------------------------------------------------------------------------------
+// USER ACTION HANDLERS
+// ------------------------------------------------------------------------------
+
+async function downloadSingleExpensePDF(expId) {
+  const exp = downloadExpensesList.find(e => e.id === expId);
+  if (!exp) return;
+  showToast(`Generating PDF voucher for ${exp.id}...`, "info");
+  const doc = await buildExpensesPDFDoc([exp], {
+    title: `EXPENSE VOUCHER - ${exp.id}`,
+    scopeLabel: `Single Claim Voucher: ${exp.id}`,
+    includeReceiptPages: true
+  });
+  if (doc) {
+    doc.save(`Expense_Voucher_${exp.id}.pdf`);
+    showToast(`PDF voucher saved: Expense_Voucher_${exp.id}.pdf`, "success");
+  }
+}
+
+async function downloadSelectedExpensesPDF() {
+  if (selectedDownloadExpenseIds.size === 0) {
+    showToast("Please select at least one expense claim.", "warning");
+    return;
+  }
+  const selected = downloadExpensesList.filter(e => selectedDownloadExpenseIds.has(e.id));
+  showToast(`Generating PDF report for ${selected.length} claims...`, "info");
+  const today = new Date().toISOString().split("T")[0];
+  const doc = await buildExpensesPDFDoc(selected, {
+    title: `EXPENSE REPORT - ${selected.length} SELECTED CLAIMS`,
+    scopeLabel: `Selected Claims (${selected.length})`,
+    includeReceiptPages: true
+  });
+  if (doc) {
+    doc.save(`Expenses_Report_${selected.length}_Claims_${today}.pdf`);
+    showToast(`PDF report exported for ${selected.length} claims.`, "success");
+  }
+}
+
+async function downloadCurrentFilteredPDF() {
+  const exps = currentDownloadMode === "month-wise" ? downloadExpensesList : filteredDownloadExpenses;
+  if (!exps || exps.length === 0) {
+    showToast("No claims available to export.", "warning");
+    return;
+  }
+  showToast(`Generating PDF for ${exps.length} claims...`, "info");
+  const today = new Date().toISOString().split("T")[0];
+  const doc = await buildExpensesPDFDoc(exps, {
+    title: `EXPENSE CLAIMS SUMMARY REPORT`,
+    scopeLabel: `Active View (${exps.length} claims)`,
+    includeReceiptPages: true
+  });
+  if (doc) {
+    doc.save(`Expenses_Summary_Report_${today}.pdf`);
+    showToast(`PDF report exported: Expenses_Summary_Report_${today}.pdf`, "success");
+  }
+}
+
+async function downloadSingleMonthPDF(ym) {
+  const exps = downloadExpensesList.filter(e => e.date && e.date.substring(0, 7) === ym);
+  if (exps.length === 0) {
+    showToast("No claims found for this month.", "warning");
+    return;
+  }
+  let monthTitle = ym;
+  if (/^\d{4}-\d{2}$/.test(ym)) {
+    const [y, m] = ym.split('-');
+    const d = new Date(parseInt(y), parseInt(m) - 1, 1);
+    monthTitle = d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }
+  showToast(`Generating PDF for ${monthTitle}...`, "info");
+  const doc = await buildExpensesPDFDoc(exps, {
+    title: `EXPENSE REPORT - ${monthTitle.toUpperCase()}`,
+    scopeLabel: `Month-Wise: ${monthTitle}`,
+    includeReceiptPages: true
+  });
+  if (doc) {
+    doc.save(`Expense_Report_${ym}.pdf`);
+    showToast(`Month PDF exported: Expense_Report_${ym}.pdf`, "success");
+  }
+}
+
+async function downloadSelectedMonthsPDF() {
+  if (selectedDownloadMonths.size === 0) {
+    showToast("Please select at least one month.", "warning");
+    return;
+  }
+  const exps = downloadExpensesList.filter(e => e.date && selectedDownloadMonths.has(e.date.substring(0, 7)));
+  const today = new Date().toISOString().split("T")[0];
+  showToast(`Generating combined PDF for ${selectedDownloadMonths.size} months...`, "info");
+  const doc = await buildExpensesPDFDoc(exps, {
+    title: `EXPENSE REPORT - COMBINED MONTHS`,
+    scopeLabel: `${selectedDownloadMonths.size} Months Selected`,
+    includeReceiptPages: true
+  });
+  if (doc) {
+    doc.save(`Expense_Report_Combined_Months_${today}.pdf`);
+    showToast(`Combined months PDF exported.`, "success");
+  }
+}
+
+function downloadSingleExpenseExcel(expId) {
+  const exp = downloadExpensesList.find(e => e.id === expId);
+  if (!exp) return;
+  exportExpensesToExcelFile([exp], `Expense_${exp.id}.xlsx`);
+}
+
+async function downloadSingleExpenseReceipt(exp) {
+  const receiptSrc = resolveExpenseReceiptSrc(exp.receiptUrl);
+  if (!receiptSrc) {
+    showToast("No receipt attachment found for this claim.", "warning");
+    return;
+  }
+  
+  if (receiptSrc.startsWith("data:")) {
+    const link = document.createElement("a");
+    link.href = receiptSrc;
+    link.download = `Receipt_${exp.id}.jpg`;
+    link.click();
+    showToast(`Receipt for ${exp.id} downloaded.`, "success");
+  } else {
+    const att = await fetchAttachmentBinary(exp.receiptUrl, `Receipt_${exp.id}`);
+    if (att) {
+      const blob = new Blob([att.data]);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = att.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast(`Receipt for ${exp.id} downloaded.`, "success");
+    }
+  }
+}
+
+function downloadSelectedExpensesExcel() {
+  if (selectedDownloadExpenseIds.size === 0) {
+    showToast("Please select at least one expense claim.", "warning");
+    return;
+  }
+  const selected = downloadExpensesList.filter(e => selectedDownloadExpenseIds.has(e.id));
+  const filename = `Expenses_Selected_${selected.length}_Claims.xlsx`;
+  exportExpensesToExcelFile(selected, filename);
+}
+
+async function downloadSelectedAttachmentsZip() {
+  if (selectedDownloadExpenseIds.size === 0) {
+    showToast("Please select at least one expense claim.", "warning");
+    return;
+  }
+  const selected = downloadExpensesList.filter(e => selectedDownloadExpenseIds.has(e.id));
+  const receiptCount = selected.filter(e => resolveExpenseReceiptSrc(e.receiptUrl)).length;
+  if (receiptCount === 0) {
+    showToast("Selected claims do not have any receipt attachments.", "warning");
+    return;
+  }
+  await createPackageZip(selected, {
+    includeExcel: false,
+    includePDF: false,
+    includeReceipts: true,
+    zipFilename: `Receipts_Selected_${receiptCount}_Files.zip`
+  });
+}
+
+async function downloadSelectedCompletePackage() {
+  if (selectedDownloadExpenseIds.size === 0) {
+    showToast("Please select at least one expense claim.", "warning");
+    return;
+  }
+  const selected = downloadExpensesList.filter(e => selectedDownloadExpenseIds.has(e.id));
+  const today = new Date().toISOString().split("T")[0];
+  await createPackageZip(selected, {
+    includeExcel: true,
+    includePDF: true,
+    includeReceipts: true,
+    zipFilename: `Expense_Package_${selected.length}_Claims_${today}.zip`
+  });
+}
+
+function downloadAllMonthsSummary() {
+  if (downloadExpensesList.length === 0) {
+    showToast("No expense claims available.", "warning");
+    return;
+  }
+  const today = new Date().toISOString().split("T")[0];
+  exportExpensesToExcelFile(downloadExpensesList, `All_Expenses_Summary_${today}.xlsx`);
+}
+
+function downloadSingleMonthExcel(ym) {
+  const exps = downloadExpensesList.filter(e => e.date && e.date.substring(0, 7) === ym);
+  if (exps.length === 0) {
+    showToast("No claims found for this month.", "warning");
+    return;
+  }
+  exportExpensesToExcelFile(exps, `Expenses_${ym}.xlsx`);
+}
+
+async function downloadSingleMonthPackage(ym) {
+  const exps = downloadExpensesList.filter(e => e.date && e.date.substring(0, 7) === ym);
+  if (exps.length === 0) {
+    showToast("No claims found for this month.", "warning");
+    return;
+  }
+  await createPackageZip(exps, {
+    includeExcel: true,
+    includePDF: true,
+    includeReceipts: true,
+    zipFilename: `Expense_Package_${ym}.zip`
+  });
+}
+
+function downloadSelectedMonthsExcel() {
+  if (selectedDownloadMonths.size === 0) {
+    showToast("Please select at least one month.", "warning");
+    return;
+  }
+  const exps = downloadExpensesList.filter(e => e.date && selectedDownloadMonths.has(e.date.substring(0, 7)));
+  exportExpensesToExcelFile(exps, `Expenses_Months_Selected.xlsx`);
+}
+
+async function downloadSelectedMonthsPackage() {
+  if (selectedDownloadMonths.size === 0) {
+    showToast("Please select at least one month.", "warning");
+    return;
+  }
+  const exps = downloadExpensesList.filter(e => e.date && selectedDownloadMonths.has(e.date.substring(0, 7)));
+  const today = new Date().toISOString().split("T")[0];
+  await createPackageZip(exps, {
+    includeExcel: true,
+    includePDF: true,
+    includeReceipts: true,
+    zipFilename: `Expenses_Selected_Months_Package_${today}.zip`
+  });
+}
+
+function previewReceiptModal(exp) {
+  const modal = document.getElementById("receipt-preview-modal");
+  const img = document.getElementById("receipt-modal-img");
+  const title = document.getElementById("receipt-modal-title");
+  const info = document.getElementById("receipt-modal-info");
+  const dlBtn = document.getElementById("receipt-modal-dl-btn");
+  if (!modal || !img) return;
+
+  const src = resolveExpenseReceiptSrc(exp.receiptUrl);
+  if (!src) {
+    showToast("No valid receipt image found.", "warning");
+    return;
+  }
+
+  img.src = src;
+  if (title) title.innerText = `Receipt Attachment: ${exp.id}`;
+  if (info) info.innerText = `${exp.category} | ${formatAmount(exp.amount, exp.currency)} | ${formatDate(exp.date)}`;
+  if (dlBtn) {
+    dlBtn.href = src;
+    dlBtn.download = `Receipt_${exp.id}.jpg`;
+    dlBtn.onclick = function() {
+      showToast(`Downloading receipt for ${exp.id}...`, "success");
+    };
+  }
+
+  modal.style.display = "flex";
+}
+
+function closeReceiptPreviewModal() {
+  const modal = document.getElementById("receipt-preview-modal");
+  if (modal) modal.style.display = "none";
 }

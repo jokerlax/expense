@@ -60,6 +60,9 @@
         <a class="menu-item" data-view="expense-reports" id="nav-expense-reports">
           <i class="fa-solid fa-file-invoice-dollar"></i> Expense Reports
         </a>
+        <a class="menu-item" data-view="report-download" id="nav-report-download">
+          <i class="fa-solid fa-cloud-arrow-down"></i> Report Download
+        </a>
         <a class="menu-item" data-view="my-expenses" id="nav-my-expenses">
           <i class="fa-solid fa-history"></i> Expense History
         </a>
@@ -505,6 +508,224 @@
           </div>
         </section>
 
+        <!-- 3B. REPORT DOWNLOAD PANEL -->
+        <section class="panel-view" id="view-report-download" style="display: none;">
+          <!-- Top Title Bar -->
+          <div class="d-flex justify-between align-center mb-4 flex-wrap gap-2">
+            <div>
+              <h2 class="card-title">
+                <i class="fa-solid fa-cloud-arrow-down" style="color: var(--primary);"></i> Report & Attachment Download Desk
+              </h2>
+              <p style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">
+                Download your expense summaries and original receipts month-wise or individual claim-wise with batch selection.
+              </p>
+            </div>
+            <!-- Mode Switcher Tabs & Quick PDF Download -->
+            <div class="d-flex gap-2 align-center flex-wrap">
+              <div class="report-tabs" style="display: flex; gap: 6px; margin: 0;">
+                <button type="button" class="btn btn-primary btn-sm" id="btn-mode-month" onclick="switchDownloadMode('month-wise')">
+                  <i class="fa-solid fa-calendar-days"></i> Month-Wise Download
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-mode-expense" onclick="switchDownloadMode('expense-wise')">
+                  <i class="fa-solid fa-list-check"></i> Expense-Wise Download
+                </button>
+              </div>
+              <button type="button" class="btn btn-danger btn-sm" onclick="downloadCurrentFilteredPDF()" title="Download PDF report of current claims" style="font-weight: 600;">
+                <i class="fa-solid fa-file-pdf"></i> Download PDF Report
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI Summary Cards -->
+          <div class="kpi-grid mb-4">
+            <div class="kpi-card">
+              <div class="kpi-label">Total Filtered Claims</div>
+              <div class="kpi-value" id="dl-kpi-total-claims">0</div>
+              <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Claims in active scope</div>
+            </div>
+            <div class="kpi-card approved">
+              <div class="kpi-label">Total Claims Value</div>
+              <div class="kpi-value" id="dl-kpi-total-amount">0.00</div>
+              <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Sum of filtered claims</div>
+            </div>
+            <div class="kpi-card pending">
+              <div class="kpi-label">Selected Claims</div>
+              <div class="kpi-value" id="dl-kpi-selected-count">0</div>
+              <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;" id="dl-kpi-selected-amount">0.00 selected</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-label">Receipts & Attachments</div>
+              <div class="kpi-value" id="dl-kpi-receipts-count" style="color: #6366f1;">0</div>
+              <div style="font-size: 10px; color: var(--text-muted); margin-top: 4px;">Downloadable receipt files</div>
+            </div>
+          </div>
+
+          <!-- MODE 1: MONTH-WISE DOWNLOAD SECTION -->
+          <div id="section-download-month-wise" class="download-section">
+            <div class="dashboard-card mb-4" style="padding: 16px 20px;">
+              <div class="d-flex justify-between align-center mb-3 flex-wrap gap-2">
+                <div>
+                  <h3 style="font-size: 14px; font-weight: 700; margin: 0;">Monthly Expense Packages</h3>
+                  <p style="font-size: 11px; color: var(--text-muted); margin: 2px 0 0 0;">
+                    Download complete monthly packages containing structured Excel summaries and all receipt attachments.
+                  </p>
+                </div>
+                <div class="d-flex gap-2 align-center">
+                  <button class="btn btn-secondary btn-sm" onclick="downloadAllMonthsSummary()">
+                    <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Download All-Months Summary (.xlsx)
+                  </button>
+                </div>
+              </div>
+
+              <!-- Month-wise Table Container -->
+              <div class="table-container">
+                <table class="custom-table" id="month-download-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px; text-align: center;">
+                        <input type="checkbox" id="chk-master-months" onchange="toggleSelectAllMonths(this)" title="Select All Months">
+                      </th>
+                      <th>Month / Period</th>
+                      <th>Total Claims</th>
+                      <th>Total Value</th>
+                      <th>Status Summary</th>
+                      <th>Receipts</th>
+                      <th style="text-align: right;">Download Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="month-download-table-body">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Month Multi-Select Floating Action Bar -->
+              <div id="month-batch-bar" style="display: none; margin-top: 14px; padding: 10px 16px; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 6px;" class="d-flex justify-between align-center flex-wrap gap-2">
+                <div style="font-size: 12px; font-weight: 600; color: var(--text-main);">
+                  <i class="fa-solid fa-check-circle" style="color: #6366f1;"></i>
+                  <span id="month-batch-count-label">0 months selected</span>
+                </div>
+                <div class="d-flex gap-2 align-center flex-wrap">
+                  <button class="btn btn-danger btn-sm" onclick="downloadSelectedMonthsPDF()">
+                    <i class="fa-solid fa-file-pdf"></i> Export Combined PDF
+                  </button>
+                  <button class="btn btn-primary btn-sm" onclick="downloadSelectedMonthsPackage()">
+                    <i class="fa-solid fa-file-zipper"></i> Download Combined Package (PDF + Receipts ZIP)
+                  </button>
+                  <button class="btn btn-secondary btn-sm" onclick="downloadSelectedMonthsExcel()">
+                    <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Export Combined Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MODE 2: EXPENSE-WISE DOWNLOAD SECTION -->
+          <div id="section-download-expense-wise" class="download-section" style="display: none;">
+            <!-- Filter Toolbar -->
+            <div class="dashboard-card mb-4" style="padding: 14px 18px;">
+              <div class="d-flex justify-between align-center flex-wrap gap-2 mb-3">
+                <div class="d-flex align-center gap-2 flex-wrap" style="flex: 1; min-width: 250px;">
+                  <input type="text" class="form-control" id="dl-exp-search" placeholder="Search by ID, Description, Project, Category..." oninput="filterExpenseDownload()" style="height: 34px; font-size: 12px; flex: 1; min-width: 200px;">
+                </div>
+                <div class="d-flex align-center gap-2 flex-wrap">
+                  <select class="form-control" id="dl-exp-filter-month" onchange="filterExpenseDownload()" style="height: 34px; font-size: 12px; width: 140px;">
+                    <option value="ALL">All Months</option>
+                  </select>
+                  <select class="form-control" id="dl-exp-filter-category" onchange="filterExpenseDownload()" style="height: 34px; font-size: 12px; width: 130px;">
+                    <option value="ALL">All Categories</option>
+                  </select>
+                  <select class="form-control" id="dl-exp-filter-status" onchange="filterExpenseDownload()" style="height: 34px; font-size: 12px; width: 130px;">
+                    <option value="ALL">All Statuses</option>
+                    <option value="APPROVED">Approved Claims</option>
+                    <option value="PAID">Paid / Reimbursed</option>
+                    <option value="FINANCE_APPROVED">Finance Verified</option>
+                    <option value="PENDING">Pending Approval</option>
+                    <option value="UNREPORTED">Unreported</option>
+                  </select>
+                  <select class="form-control" id="dl-exp-filter-receipt" onchange="filterExpenseDownload()" style="height: 34px; font-size: 12px; width: 140px;">
+                    <option value="ALL">All Claims</option>
+                    <option value="HAS_RECEIPT">With Attachments</option>
+                    <option value="NO_RECEIPT">No Attachments</option>
+                  </select>
+                  <button class="btn btn-secondary btn-sm" onclick="resetExpenseDownloadFilters()" title="Reset Filters" style="height: 34px;">
+                    <i class="fa-solid fa-arrow-rotate-left"></i>
+                  </button>
+                  <button class="btn btn-danger btn-sm" onclick="downloadCurrentFilteredPDF()" title="Download PDF of all currently filtered claims" style="height: 34px; font-weight: 600;">
+                    <i class="fa-solid fa-file-pdf"></i> Export PDF
+                  </button>
+                </div>
+              </div>
+
+              <!-- Date Range Quick Filter -->
+              <div class="d-flex align-center gap-2 flex-wrap" style="font-size: 11.5px; color: var(--text-muted); padding-top: 6px; border-top: 1px dashed var(--border-color);">
+                <span>Date Range:</span>
+                <input type="date" class="form-control" id="dl-exp-date-from" onchange="filterExpenseDownload()" style="height: 30px; font-size: 11.5px; width: 130px;">
+                <span>to</span>
+                <input type="date" class="form-control" id="dl-exp-date-to" onchange="filterExpenseDownload()" style="height: 30px; font-size: 11.5px; width: 130px;">
+                <span class="d-flex gap-1 ms-2">
+                  <button type="button" class="btn btn-outline btn-xs" onclick="setQuickDateRange('this-month')">This Month</button>
+                  <button type="button" class="btn btn-outline btn-xs" onclick="setQuickDateRange('last-month')">Last Month</button>
+                  <button type="button" class="btn btn-outline btn-xs" onclick="setQuickDateRange('this-year')">This Year</button>
+                  <button type="button" class="btn btn-outline btn-xs" onclick="setQuickDateRange('all')">Clear</button>
+                </span>
+              </div>
+            </div>
+
+            <!-- Floating Bulk Selection Action Bar -->
+            <div id="expense-batch-bar" style="display: none; margin-bottom: 16px; padding: 12px 18px; background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(16,185,129,0.08)); border: 1px solid rgba(99,102,241,0.3); border-radius: 8px;" class="d-flex justify-between align-center flex-wrap gap-2">
+              <div class="d-flex align-center gap-3">
+                <span class="status-badge" style="background: #6366f1; color: #fff; font-size: 12px; font-weight: 700; padding: 4px 10px;" id="batch-selected-badge">
+                  0 Selected
+                </span>
+                <span id="batch-selected-detail" style="font-size: 12px; font-weight: 600; color: var(--text-main);">
+                  Total: IDR 0 | 0 Attachments
+                </span>
+              </div>
+              <div class="d-flex gap-2 align-center flex-wrap">
+                <button class="btn btn-danger btn-sm" onclick="downloadSelectedExpensesPDF()" style="font-weight: 600;">
+                  <i class="fa-solid fa-file-pdf"></i> Download Selected (PDF)
+                </button>
+                <button class="btn btn-primary btn-sm" onclick="downloadSelectedCompletePackage()">
+                  <i class="fa-solid fa-box-archive"></i> Download Complete Package (PDF + Receipts ZIP)
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="downloadSelectedExpensesExcel()">
+                  <i class="fa-solid fa-file-excel" style="color: #10b981;"></i> Download Excel (.xlsx)
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="downloadSelectedAttachmentsZip()">
+                  <i class="fa-solid fa-paperclip" style="color: #6366f1;"></i> Receipts Only (.zip)
+                </button>
+              </div>
+            </div>
+
+            <!-- Expense List Table -->
+            <div class="dashboard-card mb-4" style="padding: 16px 20px;">
+              <div class="table-container">
+                <table class="custom-table" id="expense-download-table">
+                  <thead>
+                    <tr>
+                      <th style="width: 40px; text-align: center;">
+                        <input type="checkbox" id="chk-master-expenses" onchange="toggleSelectAllDownloadExpenses(this)" title="Select All Filtered">
+                      </th>
+                      <th>Date</th>
+                      <th>Expense ID</th>
+                      <th>Category / Type</th>
+                      <th>Project & Description</th>
+                      <th>Amount</th>
+                      <th>Status</th>
+                      <th style="text-align: center;">Attachment</th>
+                      <th style="text-align: right;">Download</th>
+                    </tr>
+                  </thead>
+                  <tbody id="expense-download-table-body">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- 4. MY SETTLEMENTS & REIMBURSEMENTS PANEL (READ ONLY) -->
         <section class="panel-view" id="view-settlements" style="display: none;">
           <div class="d-flex justify-between align-center mb-4 flex-wrap gap-2">
@@ -906,6 +1127,30 @@
     </div>
   </div>
 
+  <!-- RECEIPT PREVIEW MODAL -->
+  <div class="modal-overlay" id="receipt-preview-modal" style="display: none;">
+    <div class="modal-card" style="max-width: 600px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header d-flex justify-between align-center" style="padding: 14px 18px; border-bottom: 1px solid var(--border-color);">
+        <h3 id="receipt-modal-title" style="margin: 0; font-size: 14px; font-weight: 700;">Receipt Attachment</h3>
+        <button class="btn-close" onclick="closeReceiptPreviewModal()">&times;</button>
+      </div>
+      <div class="modal-body" style="overflow-y: auto; text-align: center; padding: 20px;">
+        <div id="receipt-modal-content">
+          <img id="receipt-modal-img" src="" alt="Receipt Preview" style="max-width: 100%; max-height: 52vh; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-between align-center" style="padding: 12px 18px; border-top: 1px solid var(--border-color);">
+        <span id="receipt-modal-info" style="font-size: 11px; color: var(--text-muted);">-</span>
+        <div class="d-flex gap-2">
+          <a id="receipt-modal-dl-btn" href="#" download class="btn btn-primary btn-sm">
+            <i class="fa-solid fa-download"></i> Download Image
+          </a>
+          <button class="btn btn-secondary btn-sm" onclick="closeReceiptPreviewModal()">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- TOAST NOTIFICATION -->
   <div class="alert-toast" id="system-toast">
     <i class="fa-solid fa-circle-info" id="toast-icon"></i>
@@ -913,9 +1158,11 @@
   </div>
 
   <!-- JS CONTROLLERS -->
-  <script src="{{ url_for('static', filename='js/api.js') }}?v=28"></script>
-  <script src="{{ url_for('static', filename='js/database.js') }}?v=28"></script>
-  <script src="{{ url_for('static', filename='js/employee.js') }}?v=28"></script>
+  <script src="{{ url_for('static', filename='js/xlsx.full.min.js') }}" onerror="this.onerror=null;this.src='xlsx.full.min.js';"></script>
+  <script src="{{ url_for('static', filename='js/jszip.min.js') }}" onerror="this.onerror=null;this.src='jszip.min.js';"></script>
+  <script src="{{ url_for('static', filename='js/api.js') }}?v=32" onerror="this.onerror=null;this.src='static/js/api.js';"></script>
+  <script src="{{ url_for('static', filename='js/database.js') }}?v=32" onerror="this.onerror=null;this.src='database.js';"></script>
+  <script src="{{ url_for('static', filename='js/employee.js') }}?v=32" onerror="this.onerror=null;this.src='employee.js';"></script>
 </body>
 
 </html>
