@@ -2651,11 +2651,13 @@ function switchDownloadMode(mode) {
     if (expSection) expSection.style.display = "none";
     if (btnMonth) { btnMonth.className = "btn btn-primary btn-sm"; }
     if (btnExp) { btnExp.className = "btn btn-secondary btn-sm"; }
+    renderMonthWiseDownload();
   } else {
     if (monthSection) monthSection.style.display = "none";
     if (expSection) expSection.style.display = "block";
     if (btnMonth) { btnMonth.className = "btn btn-secondary btn-sm"; }
     if (btnExp) { btnExp.className = "btn btn-primary btn-sm"; }
+    filterExpenseDownload();
   }
   updateDownloadKPIs();
 }
